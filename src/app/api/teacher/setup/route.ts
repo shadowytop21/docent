@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { getSupabaseServiceClient } from "@/lib/supabase-server";
+import { normalizeTeacherName, parseExperienceYears, validateTeacherBio, validateTeacherName, validateWhatsappNumber } from "@/lib/teacher-validation";
 
 type TeacherSetupRequest = {
   email?: string;
@@ -47,9 +48,42 @@ async function getOrCreateUserId(email: string, name: string, phone: string) {
 export async function POST(request: Request) {
   try {
     const payload = (await request.json().catch(() => null)) as TeacherSetupRequest | null;
-    if (!payload?.email || !payload?.name || !payload?.phone || !payload?.photoUrl || !payload?.bio || !payload?.subjects?.length || !payload?.grades?.length || !payload?.boards?.length || !payload?.locality || !payload?.pricePerMonth || !payload?.teachesAt || !payload?.availability?.length || !payload?.experienceYears || !payload?.whatsappNumber) {
+    if (!payload?.email || !payload?.name || !payload?.phone || !payload?.photoUrl || !payload?.bio || !payload?.subjects?.length || !payload?.grades?.length || !payload?.boards?.length || !payload?.locality || payload?.pricePerMonth === undefined || !payload?.teachesAt || !payload?.availability?.length || payload?.experienceYears === undefined || !payload?.whatsappNumber) {
       return NextResponse.json({ message: "Missing teacher setup fields." }, { status: 400 });
     }
+
+    // Mirror client validation on the server so malformed direct requests are rejected.
+    const nameError = validateTeacherName(payload.name);
+    if (nameError) {
+      return NextResponse.json({ message: nameError }, { status: 400 });
+    }
+
+    const bioError = validateTeacherBio(payload.bio);
+    if (bioError) {
+      return NextResponse.json({ message: bioError }, { status: 400 });
+    }
+
+    const experienceResult = parseExperienceYears(payload.experienceYears);
+    if (experienceResult.error || experienceResult.value === null) {
+      return NextResponse.json({ message: experienceResult.error ?? "Invalid experience years." }, { status: 400 });
+    }
+
+    const whatsappResult = validateWhatsappNumber(payload.whatsappNumber);
+    if (whatsappResult.error || !whatsappResult.value) {
+      return NextResponse.json({ message: whatsappResult.error ?? "Invalid WhatsApp number." }, { status: 400 });
+    }
+
+    if (payload.subjects.length > 6 || payload.grades.length > 4) {
+      return NextResponse.json({ message: "Too many subjects or grades selected." }, { status: 400 });
+    }
+
+    const parsedPrice = Number(payload.pricePerMonth);
+    if (!Number.isFinite(parsedPrice) || parsedPrice < 500 || parsedPrice > 10000) {
+      return NextResponse.json({ message: "Price must be between ₹500 and ₹10,000." }, { status: 400 });
+    }
+
+    const sanitizedName = normalizeTeacherName(payload.name);
+    const sanitizedBio = payload.bio.trim().slice(0, 200);
 
     const supabase = getSupabaseServiceClient();
     if (!supabase) {
@@ -58,7 +92,7 @@ export async function POST(request: Request) {
 
     const adminSupabase = supabase as any;
 
-    const userResult = await getOrCreateUserId(payload.email, payload.name, payload.phone);
+    const userResult = await getOrCreateUserId(payload.email, sanitizedName, payload.phone);
     if (userResult.error || !userResult.userId) {
       return NextResponse.json({ message: userResult.error ?? "Unable to create auth user." }, { status: 500 });
     }
@@ -68,8 +102,8 @@ export async function POST(request: Request) {
       {
         id: userResult.userId,
         role: "teacher",
-        name: payload.name,
-        phone: payload.whatsappNumber,
+        name: sanitizedName,
+        phone: whatsappResult.value,
         created_at: now,
       },
       { onConflict: "id" },
@@ -82,16 +116,16 @@ export async function POST(request: Request) {
     const teacherPayload = {
       user_id: userResult.userId,
       photo_url: payload.photoUrl,
-      bio: payload.bio.slice(0, 200),
+      bio: sanitizedBio,
       subjects: payload.subjects,
       grades: payload.grades,
       boards: payload.boards,
       locality: payload.locality,
-      price_per_month: payload.pricePerMonth,
+      price_per_month: parsedPrice,
       teaches_at: payload.teachesAt,
       availability: payload.availability,
-      experience_years: payload.experienceYears,
-      whatsapp_number: payload.whatsappNumber,
+      experience_years: experienceResult.value,
+      whatsapp_number: whatsappResult.value,
       status: "pending",
     };
 

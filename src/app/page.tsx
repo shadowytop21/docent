@@ -1,5 +1,6 @@
 import Link from "next/link";
 import { TeacherCard } from "@/components/teacher-card";
+import { JoinAsTeacherAction } from "@/components/join-as-teacher-action";
 import {
   boardOptions,
   computeFilteredTeachers,
@@ -80,9 +81,10 @@ export default function HomePage() {
               <Link href="/browse" className="btn-primary px-6 py-3 text-sm">
                 Browse tutors
               </Link>
-              <Link href="/teacher/setup" className="btn-secondary px-6 py-3 text-sm">
+              {/* Use centralized role-aware join flow so all entry points behave consistently. */}
+              <JoinAsTeacherAction className="btn-secondary px-6 py-3 text-sm">
                 Join as teacher
-              </Link>
+              </JoinAsTeacherAction>
             </div>
 
             <div className="mt-8 flex flex-wrap gap-2 text-sm text-[var(--muted)]">

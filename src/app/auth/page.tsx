@@ -2,19 +2,21 @@
 
 import { useEffect, useState } from "react";
 import Link from "next/link";
-import { useRouter } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
 import { useToast } from "@/components/toast-provider";
 import { clearSession, findProfileByPhone, getProfilesByPhone, loadAppState, saveSession } from "@/lib/mock-db";
 import { createId } from "@/lib/utils";
 
 export default function AuthPage() {
   const router = useRouter();
+  const searchParams = useSearchParams();
   const { pushToast } = useToast();
   const [loaded, setLoaded] = useState(false);
   const [hasSession, setHasSession] = useState(false);
   const [phone, setPhone] = useState("");
   const [name, setName] = useState("");
   const [email, setEmail] = useState("");
+  const preferredRole: "teacher" | null = searchParams.get("role") === "teacher" ? "teacher" : null;
 
   useEffect(() => {
     const snapshot = loadAppState();
@@ -83,12 +85,20 @@ export default function AuthPage() {
       return;
     }
 
-    saveSession({
+    const newSession = {
       id: createId("session"),
       phone,
       name,
       email,
-    });
+      role: preferredRole ?? undefined,
+    };
+    saveSession(newSession);
+
+    if (preferredRole === "teacher") {
+      pushToast({ tone: "success", title: "Signed in", description: "Continue to teacher profile setup." });
+      router.push("/teacher/setup");
+      return;
+    }
 
     pushToast({ tone: "success", title: "Signed in", description: "Your session is ready. Pick a role next." });
     router.push("/onboarding");

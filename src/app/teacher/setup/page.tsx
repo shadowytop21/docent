@@ -11,6 +11,7 @@ import {
   subjectOptions,
 } from "@/lib/data";
 import { createTeacherProfile, findTeacherByUserId, loadAppState, saveSession, updateTeacherProfile } from "@/lib/mock-db";
+import { parseExperienceYears, validateTeacherBio, validateTeacherName, validateWhatsappNumber } from "@/lib/teacher-validation";
 import { createId } from "@/lib/utils";
 
 const steps = ["Personal info", "Teaching details", "Location & pricing"];
@@ -25,6 +26,13 @@ export default function TeacherSetupPage() {
   const [isEditing, setIsEditing] = useState(false);
   const [priceError, setPriceError] = useState("");
   const [submitError, setSubmitError] = useState("");
+  const [step1Errors, setStep1Errors] = useState<{
+    fullName?: string;
+    bio?: string;
+    experienceYears?: string;
+    whatsappNumber?: string;
+  }>({});
+  const [step1Attempted, setStep1Attempted] = useState(false);
   const [step2Errors, setStep2Errors] = useState<{
     subjects?: string;
     grades?: string;
@@ -172,7 +180,43 @@ export default function TeacherSetupPage() {
     return Object.keys(errors).length === 0;
   }
 
+  function validateStep1() {
+    // Keep step-one rules explicit so users get immediate guidance before progressing.
+    const errors: typeof step1Errors = {};
+
+    const nameError = validateTeacherName(form.fullName);
+    if (nameError) {
+      errors.fullName = nameError;
+    }
+
+    const bioError = validateTeacherBio(form.bio);
+    if (bioError) {
+      errors.bio = bioError;
+    }
+
+    const experienceResult = parseExperienceYears(form.experienceYears);
+    if (experienceResult.error) {
+      errors.experienceYears = experienceResult.error;
+    }
+
+    const whatsappResult = validateWhatsappNumber(form.whatsappNumber);
+    if (whatsappResult.error) {
+      errors.whatsappNumber = whatsappResult.error;
+    }
+
+    setStep1Errors(errors);
+    return Object.keys(errors).length === 0;
+  }
+
   function goNext() {
+    if (currentStep === 0) {
+      setStep1Attempted(true);
+      const valid = validateStep1();
+      if (!valid) {
+        return;
+      }
+    }
+
     if (currentStep === 1) {
       setStep2Attempted(true);
       const valid = validateStep2();
@@ -204,6 +248,20 @@ export default function TeacherSetupPage() {
 
     if (!profilePhoto || !form.fullName || !form.bio || !form.experienceYears || !form.whatsappNumber || !form.locality || !form.pricePerMonth) {
       pushToast({ tone: "error", title: "Complete the form", description: "Please fill in all required fields before submitting." });
+      return;
+    }
+
+    const validStep1 = validateStep1();
+    setStep1Attempted(true);
+    if (!validStep1) {
+      pushToast({ tone: "error", title: "Please fix personal info errors before submitting." });
+      return;
+    }
+
+    const parsedExperience = parseExperienceYears(form.experienceYears);
+    const parsedWhatsapp = validateWhatsappNumber(form.whatsappNumber);
+    if (parsedExperience.value === null || !parsedWhatsapp.value) {
+      pushToast({ tone: "error", title: "Please provide valid experience and WhatsApp number." });
       return;
     }
 
@@ -240,8 +298,8 @@ export default function TeacherSetupPage() {
         pricePerMonth: parsedPrice,
         teachesAt: form.teachesAt as "student_home" | "teacher_home" | "both",
         availability: form.availability,
-        experienceYears: Number(form.experienceYears),
-        whatsappNumber: form.whatsappNumber,
+        experienceYears: parsedExperience.value,
+        whatsappNumber: parsedWhatsapp.value,
       }),
     });
 
@@ -266,8 +324,8 @@ export default function TeacherSetupPage() {
         pricePerMonth: parsedPrice,
         teachesAt: form.teachesAt as "student_home" | "teacher_home" | "both",
         availability: form.availability,
-        experienceYears: Number(form.experienceYears),
-        whatsappNumber: form.whatsappNumber,
+        experienceYears: parsedExperience.value,
+        whatsappNumber: parsedWhatsapp.value,
       });
       pushToast({
         tone: "warning",
@@ -287,8 +345,8 @@ export default function TeacherSetupPage() {
         pricePerMonth: parsedPrice,
         teachesAt: form.teachesAt as "student_home" | "teacher_home" | "both",
         availability: form.availability,
-        experienceYears: Number(form.experienceYears),
-        whatsappNumber: form.whatsappNumber,
+        experienceYears: parsedExperience.value,
+        whatsappNumber: parsedWhatsapp.value,
       });
       pushToast({ tone: "success", title: "Profile submitted", description: "We'll notify you on WhatsApp once verified." });
     }
@@ -358,21 +416,71 @@ export default function TeacherSetupPage() {
               <div className="space-y-5">
                 <div>
                   <label className="mb-2 block text-sm font-semibold text-[var(--foreground)]">Full name</label>
-                  <input className="field" value={form.fullName} onChange={(event) => setForm({ ...form, fullName: event.target.value })} required />
+                  <input
+                    className="field"
+                    value={form.fullName}
+                    onChange={(event) => {
+                      setForm({ ...form, fullName: event.target.value });
+                      if (step1Attempted) {
+                        setStep1Errors((current) => ({ ...current, fullName: undefined }));
+                      }
+                    }}
+                    required
+                  />
+                  {step1Attempted && step1Errors.fullName ? <p className="mt-2 text-sm text-red-600">{step1Errors.fullName}</p> : null}
                 </div>
                 <div>
                   <label className="mb-2 block text-sm font-semibold text-[var(--foreground)]">Short bio</label>
-                  <textarea className="textarea" maxLength={200} value={form.bio} onChange={(event) => setForm({ ...form, bio: event.target.value })} required />
+                  <textarea
+                    className="textarea"
+                    maxLength={200}
+                    value={form.bio}
+                    onChange={(event) => {
+                      setForm({ ...form, bio: event.target.value });
+                      if (step1Attempted) {
+                        setStep1Errors((current) => ({ ...current, bio: undefined }));
+                      }
+                    }}
+                    required
+                  />
                   <p className="mt-2 text-xs text-[var(--muted)]">{form.bio.length}/200 characters</p>
+                  {step1Attempted && step1Errors.bio ? <p className="mt-2 text-sm text-red-600">{step1Errors.bio}</p> : null}
                 </div>
                 <div className="grid gap-4 sm:grid-cols-2">
                   <div>
                     <label className="mb-2 block text-sm font-semibold text-[var(--foreground)]">Years of experience</label>
-                    <input className="field" type="number" min="0" value={form.experienceYears} onChange={(event) => setForm({ ...form, experienceYears: event.target.value })} required />
+                    <input
+                      className="field"
+                      type="number"
+                      min="0"
+                      max="50"
+                      step="1"
+                      value={form.experienceYears}
+                      onChange={(event) => {
+                        setForm({ ...form, experienceYears: event.target.value.replace(/[^0-9]/g, "") });
+                        if (step1Attempted) {
+                          setStep1Errors((current) => ({ ...current, experienceYears: undefined }));
+                        }
+                      }}
+                      required
+                    />
+                    {step1Attempted && step1Errors.experienceYears ? <p className="mt-2 text-sm text-red-600">{step1Errors.experienceYears}</p> : null}
                   </div>
                   <div>
                     <label className="mb-2 block text-sm font-semibold text-[var(--foreground)]">WhatsApp number</label>
-                    <input className="field" value={form.whatsappNumber} onChange={(event) => setForm({ ...form, whatsappNumber: event.target.value })} required />
+                    <input
+                      className="field"
+                      inputMode="tel"
+                      value={form.whatsappNumber}
+                      onChange={(event) => {
+                        setForm({ ...form, whatsappNumber: event.target.value });
+                        if (step1Attempted) {
+                          setStep1Errors((current) => ({ ...current, whatsappNumber: undefined }));
+                        }
+                      }}
+                      required
+                    />
+                    {step1Attempted && step1Errors.whatsappNumber ? <p className="mt-2 text-sm text-red-600">{step1Errors.whatsappNumber}</p> : null}
                   </div>
                 </div>
               </div>

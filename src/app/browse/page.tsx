@@ -3,6 +3,7 @@
 import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
+import { JoinAsTeacherAction } from "@/components/join-as-teacher-action";
 import { TeacherCard } from "@/components/teacher-card";
 import { useToast } from "@/components/toast-provider";
 import {
@@ -144,9 +145,10 @@ export default function BrowsePage() {
               Search by subject, grade, locality, board, price, or availability. Verified teachers appear first.
             </p>
           </div>
-          <Link href="/teacher/setup" className="btn-primary px-6 py-3 text-sm">
+          {/* Use centralized role-aware join flow so all entry points behave consistently. */}
+          <JoinAsTeacherAction className="btn-primary px-6 py-3 text-sm">
             Join as teacher
-          </Link>
+          </JoinAsTeacherAction>
         </div>
 
         <div className="mt-8 grid gap-4 lg:grid-cols-[1.2fr_0.8fr]">
@@ -219,7 +221,7 @@ export default function BrowsePage() {
             <p className="mt-3 text-lg leading-8 text-[var(--muted)]">You can broaden subject, board, locality, or price to discover more tutors.</p>
             <div className="mt-6 flex justify-center gap-3">
               <button type="button" onClick={resetFilters} className="btn-primary px-6 py-3 text-sm">Clear all filters</button>
-              <Link href="/teacher/setup" className="btn-secondary px-6 py-3 text-sm">Add a tutor profile</Link>
+              <JoinAsTeacherAction className="btn-secondary px-6 py-3 text-sm">Add a tutor profile</JoinAsTeacherAction>
             </div>
           </div>
         )}

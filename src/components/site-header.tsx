@@ -1,4 +1,5 @@
 import Link from "next/link";
+import { JoinAsTeacherAction } from "@/components/join-as-teacher-action";
 
 export function SiteHeader() {
   return (
@@ -20,9 +21,10 @@ export function SiteHeader() {
           <Link href="/browse" className="text-sm font-semibold text-navy transition hover:text-saffron">
             Browse Tutors
           </Link>
-          <Link href="/teacher/setup" className="text-sm font-semibold text-navy transition hover:text-saffron">
+          {/* Use centralized role-aware join flow so all entry points behave consistently. */}
+          <JoinAsTeacherAction className="text-sm font-semibold text-navy transition hover:text-saffron">
             Join as Teacher
-          </Link>
+          </JoinAsTeacherAction>
           <Link href="/auth" className="text-sm font-semibold text-navy transition hover:text-saffron">
             Login
           </Link>

@@ -45,9 +45,41 @@ export default function TeacherProfilePage() {
   }, []);
 
   const fallbackSnapshot = useMemo(() => loadAppState(), [mounted, rating, editingReview, refreshKey]);
+  const mergedTeachers = useMemo(() => {
+    const byId = new Map<string, TeacherRecord>();
+
+    for (const item of remoteTeachers ?? []) {
+      byId.set(item.id, item);
+    }
+
+    for (const item of fallbackSnapshot.teachers) {
+      if (!byId.has(item.id)) {
+        byId.set(item.id, item);
+      }
+    }
+
+    return Array.from(byId.values());
+  }, [remoteTeachers, fallbackSnapshot.teachers]);
+
+  const mergedReviews = useMemo(() => {
+    const byId = new Map<string, ReviewRecord>();
+
+    for (const item of remoteReviews ?? []) {
+      byId.set(item.id, item);
+    }
+
+    for (const item of fallbackSnapshot.reviews) {
+      if (!byId.has(item.id)) {
+        byId.set(item.id, item);
+      }
+    }
+
+    return Array.from(byId.values());
+  }, [remoteReviews, fallbackSnapshot.reviews]);
+
   const snapshot = {
-    teachers: remoteTeachers ?? fallbackSnapshot.teachers,
-    reviews: remoteReviews ?? fallbackSnapshot.reviews,
+    teachers: mergedTeachers,
+    reviews: mergedReviews,
     session: fallbackSnapshot.session,
     profiles: fallbackSnapshot.profiles,
   };
@@ -204,9 +236,9 @@ export default function TeacherProfilePage() {
             <p className="mt-4 text-sm leading-6 text-[var(--muted)]">
               Availability: {currentTeacher.availability.join(", ")}.
             </p>
-            <p className="mt-4 text-sm leading-6 text-[var(--muted)]">
-              Joined on {formatDate("2026-04-12T00:00:00Z")}.
-            </p>
+            {currentTeacher.created_at ? (
+              <p className="mt-4 text-sm leading-6 text-[var(--muted)]">Joined on {formatDate(currentTeacher.created_at)}.</p>
+            ) : null}
           </div>
         </div>
       </section>
