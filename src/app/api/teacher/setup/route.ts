@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { getSupabaseServiceClient } from "@/lib/supabase-server";
+import { checkRateLimit, getRequestIp } from "@/lib/rate-limit";
 import { normalizeTeacherName, parseExperienceYears, validateTeacherBio, validateTeacherName, validateWhatsappNumber } from "@/lib/teacher-validation";
 
 type TeacherSetupRequest = {
@@ -18,6 +19,9 @@ type TeacherSetupRequest = {
   experienceYears?: number;
   whatsappNumber?: string;
 };
+
+const ALLOWED_PHOTO_PREFIXES = ["data:image/jpeg;base64,", "data:image/png;base64,", "data:image/webp;base64,"];
+const MAX_PHOTO_URL_LENGTH = 2_900_000;
 
 async function getOrCreateUserId(email: string, name: string, phone: string) {
   const supabase = getSupabaseServiceClient();
@@ -47,6 +51,12 @@ async function getOrCreateUserId(email: string, name: string, phone: string) {
 
 export async function POST(request: Request) {
   try {
+    const ip = getRequestIp(request);
+    const rateLimit = checkRateLimit(`teacher-setup:${ip}`, 12, 10 * 60 * 1000);
+    if (!rateLimit.allowed) {
+      return NextResponse.json({ message: "Too many submissions. Please try again shortly." }, { status: 429 });
+    }
+
     const payload = (await request.json().catch(() => null)) as TeacherSetupRequest | null;
     if (!payload?.email || !payload?.name || !payload?.phone || !payload?.photoUrl || !payload?.bio || !payload?.subjects?.length || !payload?.grades?.length || !payload?.boards?.length || !payload?.locality || payload?.pricePerMonth === undefined || !payload?.teachesAt || !payload?.availability?.length || payload?.experienceYears === undefined || !payload?.whatsappNumber) {
       return NextResponse.json({ message: "Missing teacher setup fields." }, { status: 400 });
@@ -84,6 +94,11 @@ export async function POST(request: Request) {
 
     const sanitizedName = normalizeTeacherName(payload.name);
     const sanitizedBio = payload.bio.trim().slice(0, 200);
+
+    const hasAllowedPhotoPrefix = ALLOWED_PHOTO_PREFIXES.some((prefix) => payload.photoUrl!.startsWith(prefix));
+    if (!hasAllowedPhotoPrefix || payload.photoUrl.length > MAX_PHOTO_URL_LENGTH) {
+      return NextResponse.json({ message: "Photo must be JPG, PNG, or WebP and under 2MB." }, { status: 400 });
+    }
 
     const supabase = getSupabaseServiceClient();
     if (!supabase) {

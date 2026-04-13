@@ -16,7 +16,25 @@ export default function AuthPage() {
   const [phone, setPhone] = useState("");
   const [name, setName] = useState("");
   const [email, setEmail] = useState("");
-  const preferredRole: "teacher" | null = searchParams.get("role") === "teacher" ? "teacher" : null;
+  const roleParam = searchParams.get("role");
+  const preferredRole: "teacher" | "parent" | null = roleParam === "teacher" || roleParam === "parent" ? roleParam : null;
+  const returnTo = searchParams.get("next");
+
+  function resolvePostLoginRoute(role?: "teacher" | "parent") {
+    if (returnTo && returnTo.startsWith("/")) {
+      return returnTo;
+    }
+
+    if (role === "teacher") {
+      return "/teacher/dashboard";
+    }
+
+    if (role === "parent") {
+      return "/browse";
+    }
+
+    return "/onboarding";
+  }
 
   useEffect(() => {
     const snapshot = loadAppState();
@@ -33,17 +51,7 @@ export default function AuthPage() {
       return;
     }
 
-    if (role === "teacher") {
-      router.push("/teacher/dashboard");
-      return;
-    }
-
-    if (role === "parent") {
-      router.push("/browse");
-      return;
-    }
-
-    router.push("/onboarding");
+    router.push(resolvePostLoginRoute(role));
   }
 
   function signOutCurrentSession() {
@@ -77,11 +85,7 @@ export default function AuthPage() {
       });
 
       pushToast({ tone: "success", title: "Welcome back" });
-      if (existingProfile.role === "teacher") {
-        router.push("/teacher/dashboard");
-      } else {
-        router.push("/browse");
-      }
+      router.push(resolvePostLoginRoute(existingProfile.role));
       return;
     }
 
@@ -96,7 +100,13 @@ export default function AuthPage() {
 
     if (preferredRole === "teacher") {
       pushToast({ tone: "success", title: "Signed in", description: "Continue to teacher profile setup." });
-      router.push("/teacher/setup");
+      router.push(returnTo && returnTo.startsWith("/") ? returnTo : "/teacher/setup");
+      return;
+    }
+
+    if (preferredRole === "parent") {
+      pushToast({ tone: "success", title: "Signed in", description: "You can now contact and review teachers." });
+      router.push(resolvePostLoginRoute("parent"));
       return;
     }
 

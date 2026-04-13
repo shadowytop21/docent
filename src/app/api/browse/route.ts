@@ -11,7 +11,7 @@ export async function GET() {
     const adminSupabase = supabase as any;
     const { data: teacherRows, error: teacherError } = await adminSupabase
       .from("teacher_profiles")
-      .select("id,user_id,photo_url,bio,subjects,grades,boards,locality,price_per_month,teaches_at,availability,experience_years,whatsapp_number,status,is_founding_member,created_at")
+      .select("id,user_id,photo_url,bio,subjects,grades,boards,locality,price_per_month,teaches_at,availability,experience_years,status,is_founding_member,created_at")
       .eq("status", "verified");
 
     if (teacherError || !teacherRows) {
@@ -68,7 +68,7 @@ export async function GET() {
         teaches_at: row.teaches_at,
         availability: row.availability ?? [],
         experience_years: row.experience_years ?? 0,
-        whatsapp_number: row.whatsapp_number ?? "",
+        whatsapp_number: "",
         status: row.status,
         public_status: row.status,
         is_founding_member: Boolean(row.is_founding_member),

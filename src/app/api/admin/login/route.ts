@@ -4,8 +4,15 @@ import {
   createAdminSessionToken,
   getAdminSessionMaxAge,
 } from "@/lib/admin-session";
+import { checkRateLimit, getRequestIp } from "@/lib/rate-limit";
 
 export async function POST(request: Request) {
+  const ip = getRequestIp(request);
+  const rateLimit = checkRateLimit(`admin-login:${ip}`, 8, 10 * 60 * 1000);
+  if (!rateLimit.allowed) {
+    return NextResponse.json({ message: "Too many login attempts. Please try again later." }, { status: 429 });
+  }
+
   const adminEmail = process.env.ADMIN_EMAIL;
   const adminPassword = process.env.ADMIN_PASSWORD;
 

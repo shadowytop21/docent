@@ -15,6 +15,8 @@ import { parseExperienceYears, validateTeacherBio, validateTeacherName, validate
 import { createId } from "@/lib/utils";
 
 const steps = ["Personal info", "Teaching details", "Location & pricing"];
+const ALLOWED_PHOTO_TYPES = new Set(["image/jpeg", "image/png", "image/webp"]);
+const MAX_PHOTO_SIZE_BYTES = 2 * 1024 * 1024;
 
 export default function TeacherSetupPage() {
   const router = useRouter();
@@ -139,6 +141,16 @@ export default function TeacherSetupPage() {
   function handlePhotoUpload(file: File | null) {
     if (!file) {
       setProfilePhoto("");
+      return;
+    }
+
+    if (!ALLOWED_PHOTO_TYPES.has(file.type)) {
+      pushToast({ tone: "error", title: "Use JPG, PNG, or WebP image only." });
+      return;
+    }
+
+    if (file.size > MAX_PHOTO_SIZE_BYTES) {
+      pushToast({ tone: "error", title: "Image size must be 2MB or less." });
       return;
     }
 

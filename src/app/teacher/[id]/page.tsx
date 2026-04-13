@@ -1,9 +1,9 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { useParams, useRouter } from "next/navigation";
 import { useToast } from "@/components/toast-provider";
-import { AppSecurityError, isTeacherVisiblePublicly, loadAppState, submitReview as submitReviewSecure } from "@/lib/mock-db";
+import { isTeacherVisiblePublicly, loadAppState } from "@/lib/mock-db";
 import { formatCurrency, formatDate, whatsappLink } from "@/lib/utils";
 import { TeacherCard } from "@/components/teacher-card";
 import type { ReviewRecord, TeacherRecord } from "@/lib/data";
@@ -17,6 +17,9 @@ export default function TeacherProfilePage() {
   const [comment, setComment] = useState("");
   const [parentName, setParentName] = useState("");
   const [editingReview, setEditingReview] = useState(false);
+  const [showContactLoginModal, setShowContactLoginModal] = useState(false);
+  const [isContactLoading, setIsContactLoading] = useState(false);
+  const [contactNumber, setContactNumber] = useState("");
   const [refreshKey, setRefreshKey] = useState(0);
   const [remoteTeachers, setRemoteTeachers] = useState<TeacherRecord[] | null>(null);
   const [remoteReviews, setRemoteReviews] = useState<ReviewRecord[] | null>(null);
@@ -26,23 +29,23 @@ export default function TeacherProfilePage() {
     setMounted(true);
   }, []);
 
-  useEffect(() => {
-    async function loadRemoteCatalog() {
-      setCatalogLoaded(false);
-      const response = await fetch("/api/browse", { cache: "no-store" });
-      if (!response.ok) {
-        setCatalogLoaded(true);
-        return;
-      }
-
-      const payload = (await response.json()) as { teachers?: TeacherRecord[]; reviews?: ReviewRecord[] };
-      setRemoteTeachers(payload.teachers ?? []);
-      setRemoteReviews(payload.reviews ?? []);
+  const loadRemoteCatalog = useCallback(async () => {
+    setCatalogLoaded(false);
+    const response = await fetch("/api/browse", { cache: "no-store" });
+    if (!response.ok) {
       setCatalogLoaded(true);
+      return;
     }
 
-    loadRemoteCatalog();
+    const payload = (await response.json()) as { teachers?: TeacherRecord[]; reviews?: ReviewRecord[] };
+    setRemoteTeachers(payload.teachers ?? []);
+    setRemoteReviews(payload.reviews ?? []);
+    setCatalogLoaded(true);
   }, []);
+
+  useEffect(() => {
+    loadRemoteCatalog();
+  }, [loadRemoteCatalog]);
 
   const fallbackSnapshot = useMemo(() => loadAppState(), [mounted, rating, editingReview, refreshKey]);
   const mergedTeachers = useMemo(() => {
@@ -135,35 +138,84 @@ export default function TeacherProfilePage() {
     ? teacherReviews.find((review) => review.parent_id === session?.id) ?? null
     : null;
 
-  function handleReviewSubmit(event: React.FormEvent<HTMLFormElement>) {
+  async function handleReviewSubmit(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault();
     if (!session || !isParent) {
-      router.push("/auth");
+      router.push(`/auth?role=parent&next=/teacher/${currentTeacher.id}`);
       return;
     }
 
     const actualParentName = parentName || session.name || "Parent";
 
-    try {
-      submitReviewSecure({
+    // Server endpoint is the source of truth for duplicate/rate-limit and role checks.
+    const response = await fetch("/api/reviews", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
         teacherId: currentTeacher.id,
         parentId: session.id,
         parentName: actualParentName,
         rating,
         comment,
         allowEdit: Boolean(existingReview),
-      });
-      setEditingReview(false);
-      setRefreshKey((value) => value + 1);
-      pushToast({ tone: "success", title: existingReview ? "Review updated" : "Review posted" });
-    } catch (error) {
-      if (error instanceof AppSecurityError) {
-        pushToast({ tone: "error", title: error.message });
-        return;
-      }
+      }),
+    });
 
-      pushToast({ tone: "error", title: "Unable to submit review" });
+    const payload = (await response.json().catch(() => ({}))) as { message?: string };
+    if (!response.ok) {
+      pushToast({ tone: "error", title: payload.message ?? "Unable to submit review" });
+      return;
     }
+
+    await loadRemoteCatalog();
+    setEditingReview(false);
+    setRefreshKey((value) => value + 1);
+    pushToast({ tone: "success", title: existingReview ? "Review updated" : "Review posted" });
+  }
+
+  async function handleContactTeacher() {
+    if (!session || !isParent) {
+      setShowContactLoginModal(true);
+      return;
+    }
+
+    const openWhatsApp = (number: string) => {
+      window.open(
+        whatsappLink(number, "Hi, I found your profile on TutorNest and I'm interested in home tuition for my child."),
+        "_blank",
+        "noopener,noreferrer",
+      );
+    };
+
+    if (contactNumber) {
+      openWhatsApp(contactNumber);
+      return;
+    }
+
+    setIsContactLoading(true);
+    const response = await fetch("/api/teacher/contact", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        teacherId: currentTeacher.id,
+        parentId: session.id,
+      }),
+    });
+
+    const payload = (await response.json().catch(() => ({}))) as { message?: string; whatsappNumber?: string };
+    setIsContactLoading(false);
+
+    if (!response.ok || !payload.whatsappNumber) {
+      pushToast({ tone: "error", title: payload.message ?? "Unable to fetch contact details." });
+      return;
+    }
+
+    setContactNumber(payload.whatsappNumber);
+    openWhatsApp(payload.whatsappNumber);
   }
 
   return (
@@ -204,21 +256,18 @@ export default function TeacherProfilePage() {
             </div>
 
             {isParent ? (
-              <a
-                href={whatsappLink(
-                  currentTeacher.whatsapp_number,
-                  "Hi, I found your profile on TutorNest and I'm interested in home tuition for my child.",
-                )}
-                target="_blank"
-                rel="noreferrer"
-                className="whatsapp-pulse btn-primary mt-6 w-full rounded-full bg-[#25D366] px-6 py-4 text-base"
+              <button
+                type="button"
+                onClick={handleContactTeacher}
+                disabled={isContactLoading}
+                className="whatsapp-pulse btn-primary mt-6 w-full rounded-full bg-[#25D366] px-6 py-4 text-base disabled:opacity-60"
               >
-                Message on WhatsApp
-              </a>
+                {isContactLoading ? "Fetching contact..." : "Message on WhatsApp"}
+              </button>
             ) : (
               <button
                 type="button"
-                onClick={() => router.push("/auth")}
+                onClick={() => setShowContactLoginModal(true)}
                 className="btn-secondary mt-6 w-full px-6 py-4 text-base"
               >
                 Login to Contact
@@ -242,6 +291,34 @@ export default function TeacherProfilePage() {
           </div>
         </div>
       </section>
+
+      {showContactLoginModal ? (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/45 px-4">
+          <div className="card-surface w-full max-w-md rounded-[1.5rem] p-6">
+            <p className="text-sm uppercase tracking-[0.2em] text-[var(--muted)]">Contact teacher</p>
+            <h2 className="mt-2 font-display text-2xl font-bold text-[var(--foreground)]">Login as parent to continue</h2>
+            <p className="mt-3 text-sm leading-6 text-[var(--muted)]">
+              Only logged-in parents can contact teachers directly on WhatsApp.
+            </p>
+            <div className="mt-5 flex gap-3">
+              <button
+                type="button"
+                className="btn-secondary w-full px-4 py-3 text-sm"
+                onClick={() => setShowContactLoginModal(false)}
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                className="btn-primary w-full px-4 py-3 text-sm"
+                onClick={() => router.push(`/auth?role=parent&next=/teacher/${currentTeacher.id}`)}
+              >
+                Login as Parent
+              </button>
+            </div>
+          </div>
+        </div>
+      ) : null}
 
       <section className="mt-8 grid gap-8 lg:grid-cols-[1fr_0.9fr]">
         <div className="card-surface rounded-[2rem] p-6">
