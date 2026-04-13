@@ -34,6 +34,45 @@ function signPayload(payloadEncoded: string, secret: string) {
   return createHmac("sha256", secret).update(payloadEncoded).digest("base64url");
 }
 
+function decodeVerifiedPayload(token: string | undefined | null) {
+  if (!token) {
+    return null;
+  }
+
+  const secret = getSigningSecret();
+  if (!secret) {
+    return null;
+  }
+
+  const [payloadEncoded, receivedSignature] = token.split(".");
+  if (!payloadEncoded || !receivedSignature) {
+    return null;
+  }
+
+  const expectedSignature = signPayload(payloadEncoded, secret);
+  const received = Buffer.from(receivedSignature, "utf8");
+  const expected = Buffer.from(expectedSignature, "utf8");
+  if (received.length !== expected.length || !timingSafeEqual(received, expected)) {
+    return null;
+  }
+
+  try {
+    const payload = JSON.parse(base64UrlDecode(payloadEncoded)) as AdminPayload;
+    if (!payload.email || payload.exp <= Math.floor(Date.now() / 1000)) {
+      return null;
+    }
+
+    const normalizedAdminEmail = (process.env.ADMIN_EMAIL ?? "").trim().toLowerCase();
+    if (payload.email.toLowerCase() !== normalizedAdminEmail) {
+      return null;
+    }
+
+    return payload;
+  } catch {
+    return null;
+  }
+}
+
 export function createAdminSessionToken(email: string) {
   const secret = getSigningSecret();
   if (!secret) {
@@ -51,39 +90,11 @@ export function createAdminSessionToken(email: string) {
 }
 
 export function verifyAdminSessionToken(token: string | undefined | null) {
-  if (!token) {
-    return false;
-  }
+  return Boolean(decodeVerifiedPayload(token));
+}
 
-  const secret = getSigningSecret();
-  if (!secret) {
-    return false;
-  }
-
-  const [payloadEncoded, receivedSignature] = token.split(".");
-  if (!payloadEncoded || !receivedSignature) {
-    return false;
-  }
-
-  const expectedSignature = signPayload(payloadEncoded, secret);
-  const received = Buffer.from(receivedSignature, "utf8");
-  const expected = Buffer.from(expectedSignature, "utf8");
-
-  if (received.length !== expected.length || !timingSafeEqual(received, expected)) {
-    return false;
-  }
-
-  try {
-    const payload = JSON.parse(base64UrlDecode(payloadEncoded)) as AdminPayload;
-    if (!payload.email || payload.exp <= Math.floor(Date.now() / 1000)) {
-      return false;
-    }
-
-    const normalizedAdminEmail = (process.env.ADMIN_EMAIL ?? "").trim().toLowerCase();
-    return payload.email.toLowerCase() === normalizedAdminEmail;
-  } catch {
-    return false;
-  }
+export function getAdminSessionEmail(token: string | undefined | null) {
+  return decodeVerifiedPayload(token)?.email ?? null;
 }
 
 export function getAdminSessionMaxAge() {

@@ -1,6 +1,7 @@
 import { cookies } from "next/headers";
 import { NextResponse } from "next/server";
-import { ADMIN_SESSION_COOKIE, verifyAdminSessionToken } from "@/lib/admin-session";
+import { ADMIN_SESSION_COOKIE, getAdminSessionEmail, verifyAdminSessionToken } from "@/lib/admin-session";
+import { logAdminAuditEvent } from "@/lib/admin-audit";
 import { getSupabaseServiceClient } from "@/lib/supabase-server";
 
 type RouteContext = {
@@ -13,6 +14,8 @@ export async function PATCH(request: Request, context: RouteContext) {
     if (!verifyAdminSessionToken(token)) {
       return NextResponse.json({ message: "Unauthorized" }, { status: 401 });
     }
+
+    const adminEmail = getAdminSessionEmail(token) ?? "unknown";
 
     const supabase = getSupabaseServiceClient();
     if (!supabase) {
@@ -40,6 +43,11 @@ export async function PATCH(request: Request, context: RouteContext) {
     if (error) {
       return NextResponse.json({ ok: true, offline: true });
     }
+
+    await logAdminAuditEvent("admin.teacher.updated", adminEmail, {
+      teacherId,
+      ...updatePayload,
+    });
 
     return NextResponse.json({ ok: true });
   } catch {

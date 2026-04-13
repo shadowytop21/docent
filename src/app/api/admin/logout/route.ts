@@ -1,7 +1,14 @@
+import { cookies } from "next/headers";
 import { NextResponse } from "next/server";
-import { ADMIN_SESSION_COOKIE } from "@/lib/admin-session";
+import { logAdminAuditEvent } from "@/lib/admin-audit";
+import { ADMIN_SESSION_COOKIE, getAdminSessionEmail, verifyAdminSessionToken } from "@/lib/admin-session";
 
 export async function POST() {
+  const token = cookies().get(ADMIN_SESSION_COOKIE)?.value;
+  if (verifyAdminSessionToken(token)) {
+    await logAdminAuditEvent("admin.logout", getAdminSessionEmail(token) ?? "unknown");
+  }
+
   const response = NextResponse.json({ ok: true });
   response.cookies.set({
     name: ADMIN_SESSION_COOKIE,

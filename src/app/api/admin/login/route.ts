@@ -4,6 +4,7 @@ import {
   createAdminSessionToken,
   getAdminSessionMaxAge,
 } from "@/lib/admin-session";
+import { logAdminAuditEvent } from "@/lib/admin-audit";
 import { checkRateLimit, getRequestIp } from "@/lib/rate-limit";
 
 export async function POST(request: Request) {
@@ -37,6 +38,7 @@ export async function POST(request: Request) {
   const validPassword = password === normalizedAdminPassword;
 
   if (!validEmail || !validPassword) {
+    await logAdminAuditEvent("admin.login.failed", email || "unknown", { ip });
     return NextResponse.json({ message: "Invalid admin credentials." }, { status: 401 });
   }
 
@@ -55,6 +57,8 @@ export async function POST(request: Request) {
     path: "/",
     maxAge: getAdminSessionMaxAge(),
   });
+
+  await logAdminAuditEvent("admin.login.success", email, { ip });
 
   return response;
 }

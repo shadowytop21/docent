@@ -1,6 +1,7 @@
 import { cookies } from "next/headers";
 import { NextResponse } from "next/server";
-import { ADMIN_SESSION_COOKIE, verifyAdminSessionToken } from "@/lib/admin-session";
+import { ADMIN_SESSION_COOKIE, getAdminSessionEmail, verifyAdminSessionToken } from "@/lib/admin-session";
+import { logAdminAuditEvent } from "@/lib/admin-audit";
 import { getSupabaseServiceClient } from "@/lib/supabase-server";
 
 type RouteContext = {
@@ -14,6 +15,8 @@ export async function DELETE(_: Request, context: RouteContext) {
       return NextResponse.json({ message: "Unauthorized" }, { status: 401 });
     }
 
+    const adminEmail = getAdminSessionEmail(token) ?? "unknown";
+
     const supabase = getSupabaseServiceClient();
     if (!supabase) {
       return NextResponse.json({ ok: true, offline: true });
@@ -24,6 +27,8 @@ export async function DELETE(_: Request, context: RouteContext) {
     if (error) {
       return NextResponse.json({ ok: true, offline: true });
     }
+
+    await logAdminAuditEvent("admin.review.deleted", adminEmail, { reviewId });
 
     return NextResponse.json({ ok: true });
   } catch {

@@ -58,16 +58,39 @@ create table if not exists public.reviews (
   unique (teacher_id, parent_id)
 );
 
+create table if not exists public.admin_audit_logs (
+  id uuid primary key default gen_random_uuid(),
+  action text not null,
+  actor_email text not null,
+  metadata jsonb not null default '{}'::jsonb,
+  created_at timestamptz not null default now()
+);
+
 create unique index if not exists profiles_phone_unique_idx on public.profiles (phone) where phone is not null;
 create unique index if not exists reviews_parent_daily_unique_idx on public.reviews (parent_id, (date(created_at)));
 
 create index if not exists teacher_profiles_status_idx on public.teacher_profiles (status);
 create index if not exists teacher_profiles_locality_idx on public.teacher_profiles (locality);
 create index if not exists reviews_teacher_idx on public.reviews (teacher_id);
+create index if not exists admin_audit_logs_created_at_idx on public.admin_audit_logs (created_at desc);
+create index if not exists admin_audit_logs_action_idx on public.admin_audit_logs (action);
 
 alter table public.profiles enable row level security;
 alter table public.teacher_profiles enable row level security;
 alter table public.reviews enable row level security;
+alter table public.admin_audit_logs enable row level security;
+
+drop policy if exists "admin audit logs read denied" on public.admin_audit_logs;
+create policy "admin audit logs read denied"
+on public.admin_audit_logs
+for select
+using (false);
+
+drop policy if exists "admin audit logs write denied" on public.admin_audit_logs;
+create policy "admin audit logs write denied"
+on public.admin_audit_logs
+for insert
+with check (false);
 
 create policy "profiles are readable by owner"
 on public.profiles
