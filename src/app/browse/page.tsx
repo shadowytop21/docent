@@ -9,12 +9,12 @@ import {
   availabilityOptions,
   boardOptions,
   computeFilteredTeachers,
-  type ReviewRecord,
-  type TeacherRecord,
   gradeOptions,
   localityOptions,
   subjectOptions,
   teacherSubjects,
+  type ReviewRecord,
+  type TeacherRecord,
 } from "@/lib/data";
 import { loadAppState } from "@/lib/mock-db";
 
@@ -74,6 +74,7 @@ export default function BrowsePage() {
     teachers: remoteTeachers ?? fallbackSnapshot.teachers,
     reviews: remoteReviews ?? fallbackSnapshot.reviews,
   };
+
   const teachers = useMemo(
     () =>
       computeFilteredTeachers(snapshot.teachers ?? [], {
@@ -85,8 +86,7 @@ export default function BrowsePage() {
         availability: availability || undefined,
         priceMax,
         includePending: true,
-      },
-      snapshot.reviews ?? []),
+      }, snapshot.reviews ?? []),
     [availability, board, grade, locality, priceMax, query, snapshot.reviews, snapshot.teachers, subject],
   );
 
