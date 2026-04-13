@@ -18,6 +18,7 @@ export default function AdminLoginPage() {
     try {
       const response = await fetch("/api/admin/login", {
         method: "POST",
+        credentials: "include",
         headers: {
           "Content-Type": "application/json",
         },
@@ -39,6 +40,11 @@ export default function AdminLoginPage() {
 
       pushToast({ tone: "success", title: "Admin login successful" });
       router.replace("/admin");
+      router.refresh();
+
+      // Force full navigation so server-side cookie checks run immediately.
+      window.location.href = "/admin";
+      return;
     } finally {
       setSubmitting(false);
     }
