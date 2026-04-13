@@ -1,26 +1,29 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import { useToast } from "@/components/toast-provider";
+import type { AppSnapshot } from "@/lib/mock-db";
 import {
-  clearAdminAuth,
   deleteReviewById,
-  isAdminAuthValid,
-  loadAdminAuth,
   loadAppState,
   setTeacherStatus,
   toggleFoundingMember,
 } from "@/lib/mock-db";
+import { getSupabaseBrowserClient } from "@/lib/supabase";
 import { formatCurrency, formatDate } from "@/lib/utils";
 
-export function AdminPanel({ adminEmail }: { adminEmail: string }) {
+export function AdminPanel() {
   const router = useRouter();
   const { pushToast } = useToast();
-  const [checkedAccess, setCheckedAccess] = useState(false);
-  const [refreshKey, setRefreshKey] = useState(0);
+  const [snapshot, setSnapshot] = useState<AppSnapshot>({
+    profiles: [],
+    teachers: [],
+    reviews: [],
+    session: null,
+  });
+  const [isRemoteData, setIsRemoteData] = useState(false);
 
-  const snapshot = useMemo(() => loadAppState(), [refreshKey]);
   const stats = {
     totalTeachers: snapshot.teachers.length,
     pendingTeachers: snapshot.teachers.filter((teacher) => teacher.status === "pending").length,
@@ -28,53 +31,212 @@ export function AdminPanel({ adminEmail }: { adminEmail: string }) {
     totalParents: snapshot.profiles.filter((profile) => profile.role === "parent").length,
   };
 
-  function refresh() {
-    setRefreshKey((value) => value + 1);
-  }
+  const loadModerationSnapshot = useCallback(async () => {
+    const localSnapshot = loadAppState();
+    const client = getSupabaseBrowserClient();
 
-  useEffect(() => {
-    const adminAuth = loadAdminAuth();
-    const canAccess = Boolean(adminEmail && adminAuth && isAdminAuthValid(adminEmail));
-
-    if (!canAccess) {
-      router.replace("/admin/login");
+    if (!client) {
+      setSnapshot(localSnapshot);
+      setIsRemoteData(false);
       return;
     }
 
-    setCheckedAccess(true);
-  }, [adminEmail, router]);
+    const supabase = client as any;
+    const [teacherResponse, profileResponse, reviewResponse] = await Promise.all([
+      supabase
+        .from("teacher_profiles")
+        .select("id,user_id,photo_url,bio,subjects,grades,boards,locality,price_per_month,teaches_at,availability,experience_years,whatsapp_number,status,is_founding_member,created_at"),
+      supabase.from("profiles").select("id,role,name,phone,created_at"),
+      supabase.from("reviews").select("id,teacher_id,parent_id,rating,comment,created_at"),
+    ]);
 
-  function logoutAdmin() {
-    clearAdminAuth();
+    if (teacherResponse.error || profileResponse.error || reviewResponse.error) {
+      setSnapshot(localSnapshot);
+      setIsRemoteData(false);
+      return;
+    }
+
+    const teacherRows = (teacherResponse.data ?? []) as any[];
+    const profileRows = (profileResponse.data ?? []) as any[];
+    const reviewRows = (reviewResponse.data ?? []) as any[];
+
+    const profileById = new Map<string, { name: string; phone: string; role: "teacher" | "parent"; created_at: string }>(
+      profileRows.map((row) => [
+        row.id,
+        {
+          name: row.name ?? "",
+          phone: row.phone ?? "",
+          role: row.role,
+          created_at: row.created_at ?? new Date().toISOString(),
+        },
+      ]),
+    );
+
+    const reviewByTeacherId = new Map<string, { total: number; count: number }>();
+    for (const review of reviewRows) {
+      const aggregate = reviewByTeacherId.get(review.teacher_id) ?? { total: 0, count: 0 };
+      aggregate.total += review.rating;
+      aggregate.count += 1;
+      reviewByTeacherId.set(review.teacher_id, aggregate);
+    }
+
+    const teachers = teacherRows.map((row) => {
+      const profile = profileById.get(row.user_id);
+      const aggregate = reviewByTeacherId.get(row.id);
+      const reviewsCount = aggregate?.count ?? 0;
+      const rating = reviewsCount ? Math.round((aggregate!.total / reviewsCount) * 10) / 10 : 0;
+
+      return {
+        id: row.id,
+        user_id: row.user_id,
+        name: profile?.name ?? "Tutor",
+        photo_url: row.photo_url ?? "",
+        bio: row.bio ?? "",
+        subjects: row.subjects ?? [],
+        grades: row.grades ?? [],
+        boards: row.boards ?? [],
+        locality: row.locality ?? "",
+        price_per_month: row.price_per_month ?? 0,
+        teaches_at: row.teaches_at,
+        availability: row.availability ?? [],
+        experience_years: row.experience_years ?? 0,
+        whatsapp_number: row.whatsapp_number ?? profile?.phone ?? "",
+        status: row.status,
+        public_status: row.status,
+        is_resubmission: false,
+        is_founding_member: Boolean(row.is_founding_member),
+        created_at: row.created_at ?? new Date().toISOString(),
+        rating,
+        reviews_count: reviewsCount,
+        reviewCount: reviewsCount,
+      };
+    });
+
+    const profiles = profileRows.map((row) => ({
+      id: row.id,
+      role: row.role,
+      name: row.name ?? "",
+      phone: row.phone ?? "",
+      created_at: row.created_at ?? new Date().toISOString(),
+    }));
+
+    const reviews = reviewRows.map((row) => ({
+      id: row.id,
+      teacher_id: row.teacher_id,
+      parent_id: row.parent_id,
+      parent_name: profileById.get(row.parent_id)?.name ?? "Parent",
+      rating: row.rating,
+      comment: row.comment,
+      created_at: row.created_at,
+    }));
+
+    setSnapshot({
+      profiles,
+      teachers,
+      reviews,
+      session: localSnapshot.session,
+    });
+    setIsRemoteData(true);
+  }, []);
+
+  useEffect(() => {
+    loadModerationSnapshot();
+  }, [loadModerationSnapshot]);
+
+  async function logoutAdmin() {
+    await fetch("/api/admin/logout", {
+      method: "POST",
+    });
     router.replace("/admin/login");
   }
 
-  function approveTeacher(teacherId: string) {
+  async function approveTeacher(teacherId: string) {
+    const client = getSupabaseBrowserClient();
+    if (client) {
+      const supabase = client as any;
+      const { error } = await supabase.from("teacher_profiles").update({ status: "verified" }).eq("id", teacherId);
+      if (error) {
+        pushToast({ tone: "error", title: `Approve failed: ${error.message}` });
+        return;
+      }
+
+      await loadModerationSnapshot();
+      pushToast({ tone: "success", title: "Teacher approved" });
+      return;
+    }
+
     setTeacherStatus(teacherId, "verified");
-    refresh();
+    setSnapshot(loadAppState());
     pushToast({ tone: "success", title: "Teacher approved" });
   }
 
-  function rejectTeacher(teacherId: string) {
+  async function rejectTeacher(teacherId: string) {
+    const client = getSupabaseBrowserClient();
+    if (client) {
+      const supabase = client as any;
+      const { error } = await supabase.from("teacher_profiles").update({ status: "rejected" }).eq("id", teacherId);
+      if (error) {
+        pushToast({ tone: "error", title: `Reject failed: ${error.message}` });
+        return;
+      }
+
+      await loadModerationSnapshot();
+      pushToast({ tone: "warning", title: "Teacher rejected" });
+      return;
+    }
+
     setTeacherStatus(teacherId, "rejected");
-    refresh();
+    setSnapshot(loadAppState());
     pushToast({ tone: "warning", title: "Teacher rejected" });
   }
 
-  function toggleFounder(teacherId: string) {
+  async function toggleFounder(teacherId: string) {
+    const client = getSupabaseBrowserClient();
+    if (client) {
+      const current = snapshot.teachers.find((teacher) => teacher.id === teacherId);
+      if (!current) {
+        return;
+      }
+
+      const supabase = client as any;
+      const { error } = await supabase
+        .from("teacher_profiles")
+        .update({ is_founding_member: !current.is_founding_member })
+        .eq("id", teacherId);
+
+      if (error) {
+        pushToast({ tone: "error", title: `Update failed: ${error.message}` });
+        return;
+      }
+
+      await loadModerationSnapshot();
+      pushToast({ tone: "success", title: "Founding badge updated" });
+      return;
+    }
+
     toggleFoundingMember(teacherId);
-    refresh();
+    setSnapshot(loadAppState());
     pushToast({ tone: "success", title: "Founding badge updated" });
   }
 
-  function removeReview(reviewId: string) {
-    deleteReviewById(reviewId);
-    refresh();
-    pushToast({ tone: "success", title: "Review deleted" });
-  }
+  async function removeReview(reviewId: string) {
+    const client = getSupabaseBrowserClient();
+    if (client) {
+      const supabase = client as any;
+      const { error } = await supabase.from("reviews").delete().eq("id", reviewId);
+      if (error) {
+        pushToast({ tone: "error", title: `Delete failed: ${error.message}` });
+        return;
+      }
 
-  if (!checkedAccess) {
-    return null;
+      await loadModerationSnapshot();
+      pushToast({ tone: "success", title: "Review deleted" });
+      return;
+    }
+
+    deleteReviewById(reviewId);
+    setSnapshot(loadAppState());
+    pushToast({ tone: "success", title: "Review deleted" });
   }
 
   return (
@@ -85,6 +247,7 @@ export function AdminPanel({ adminEmail }: { adminEmail: string }) {
             <p className="text-sm uppercase tracking-[0.2em] text-[var(--muted)]">Admin panel</p>
             <h1 className="mt-3 font-display text-4xl font-bold text-[var(--foreground)]">TutorNest moderation</h1>
             <p className="mt-4 max-w-2xl text-lg leading-8 text-[var(--muted)]">Approve teachers, reject incomplete submissions, and manage the founding member badge.</p>
+            <p className="mt-3 text-sm text-[var(--muted)]">Data source: {isRemoteData ? "Supabase (shared across devices)" : "Local browser storage"}</p>
           </div>
           <button type="button" onClick={logoutAdmin} className="btn-secondary px-5 py-3 text-sm">Logout admin</button>
         </div>

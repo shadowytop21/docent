@@ -4,6 +4,7 @@ import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { useToast } from "@/components/toast-provider";
 import { getProfilesByPhone, loadAppState, saveSession, updateProfile } from "@/lib/mock-db";
+import { ensureSupabaseUser } from "@/lib/supabase";
 
 export default function OnboardingPage() {
   const router = useRouter();
@@ -30,12 +31,40 @@ export default function OnboardingPage() {
     setLoaded(true);
   }, [router]);
 
-  function chooseRole(role: "teacher" | "parent") {
+  async function chooseRole(role: "teacher" | "parent") {
     const snapshot = loadAppState();
     if (!snapshot.session) {
       router.push("/auth");
       return;
     }
+
+    const authResult = await ensureSupabaseUser();
+    if (authResult.error || !authResult.user || !authResult.client) {
+      pushToast({ tone: "error", title: authResult.error?.message ?? "Supabase user not found." });
+      return;
+    }
+
+    const profilePayload = {
+      id: authResult.user.id,
+      role,
+      name: snapshot.session.name,
+      phone: snapshot.session.phone,
+    };
+
+    const supabase = authResult.client as any;
+
+    const { data: profileInsertData, error: profileInsertError } = await supabase
+      .from("profiles")
+      .upsert(profilePayload, { onConflict: "id" })
+      .select();
+
+    if (profileInsertError) {
+      console.log("[supabase] profiles upsert error", profileInsertError);
+      pushToast({ tone: "error", title: `Profile save failed: ${profileInsertError.message}` });
+      return;
+    }
+
+    console.log("[supabase] profiles upsert success", profileInsertData);
 
     const conflictingPhoneProfile = getProfilesByPhone(snapshot.session.phone).find(
       (profile) => profile.id !== snapshot.session?.id && profile.role !== role,
@@ -49,7 +78,7 @@ export default function OnboardingPage() {
       return;
     }
 
-    const session = { ...snapshot.session, role };
+    const session = { ...snapshot.session, id: authResult.user.id, role };
     saveSession(session);
     updateProfile({
       id: session.id,

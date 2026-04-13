@@ -1,52 +1,47 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { useToast } from "@/components/toast-provider";
-import { isAdminAuthValid, saveAdminAuth } from "@/lib/mock-db";
-
-const ADMIN_EMAIL = process.env.NEXT_PUBLIC_ADMIN_EMAIL ?? "";
-const ADMIN_PASSWORD = process.env.NEXT_PUBLIC_ADMIN_PASSWORD ?? "";
 
 export default function AdminLoginPage() {
   const router = useRouter();
   const { pushToast } = useToast();
-  const [loaded, setLoaded] = useState(false);
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
+  const [submitting, setSubmitting] = useState(false);
 
-  useEffect(() => {
-    setLoaded(true);
-    if (ADMIN_EMAIL && isAdminAuthValid(ADMIN_EMAIL)) {
-      router.replace("/admin");
-    }
-  }, [router]);
-
-  function handleSubmit(event: React.FormEvent<HTMLFormElement>) {
+  async function handleSubmit(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault();
+    setSubmitting(true);
 
-    if (!ADMIN_EMAIL) {
-      pushToast({ tone: "error", title: "ADMIN_EMAIL is missing" });
-      return;
+    try {
+      const response = await fetch("/api/admin/login", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          email,
+          password,
+        }),
+      });
+
+      const payload = (await response.json().catch(() => ({}))) as { message?: string };
+
+      if (!response.ok) {
+        pushToast({
+          tone: "error",
+          title: payload.message ?? "Admin login failed",
+        });
+        return;
+      }
+
+      pushToast({ tone: "success", title: "Admin login successful" });
+      router.replace("/admin");
+    } finally {
+      setSubmitting(false);
     }
-
-    if (email.trim().toLowerCase() !== ADMIN_EMAIL.trim().toLowerCase()) {
-      pushToast({ tone: "error", title: "Access denied", description: "That email does not match the admin email." });
-      return;
-    }
-
-    if (ADMIN_PASSWORD && password !== ADMIN_PASSWORD) {
-      pushToast({ tone: "error", title: "Access denied", description: "The password does not match the admin password." });
-      return;
-    }
-
-    saveAdminAuth(email);
-    pushToast({ tone: "success", title: "Admin login successful" });
-    router.replace("/admin");
-  }
-
-  if (!loaded) {
-    return <div className="mx-auto max-w-2xl px-4 py-24 text-center text-[var(--muted)]">Loading admin login...</div>;
   }
 
   return (
@@ -65,10 +60,10 @@ export default function AdminLoginPage() {
           </div>
           <div>
             <label className="mb-2 block text-sm font-semibold text-[var(--foreground)]">Password</label>
-            <input className="field" type="password" value={password} onChange={(event) => setPassword(event.target.value)} required={Boolean(ADMIN_PASSWORD)} />
-            <p className="mt-2 text-xs text-[var(--muted)]">Use the admin password configured in your local environment.</p>
+            <input className="field" type="password" value={password} onChange={(event) => setPassword(event.target.value)} required />
+            <p className="mt-2 text-xs text-[var(--muted)]">Use the admin password configured in server environment variables.</p>
           </div>
-          <button type="submit" className="btn-primary w-full px-5 py-3">Open admin panel</button>
+          <button type="submit" className="btn-primary w-full px-5 py-3" disabled={submitting}>{submitting ? "Signing in..." : "Open admin panel"}</button>
         </div>
       </form>
     </div>

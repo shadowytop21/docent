@@ -5,6 +5,7 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useToast } from "@/components/toast-provider";
 import { clearSession, findProfileByPhone, getProfilesByPhone, loadAppState, saveSession } from "@/lib/mock-db";
+import { ensureSupabaseUser } from "@/lib/supabase";
 import { createId } from "@/lib/utils";
 
 export default function AuthPage() {
@@ -50,8 +51,16 @@ export default function AuthPage() {
     pushToast({ tone: "success", title: "Signed out" });
   }
 
-  function handleSubmit(event: React.FormEvent<HTMLFormElement>) {
+  async function handleSubmit(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault();
+
+    const authResult = await ensureSupabaseUser();
+    if (authResult.error || !authResult.user) {
+      pushToast({ tone: "error", title: authResult.error?.message ?? "Unable to sign in with Supabase." });
+      return;
+    }
+
+    const supabaseUserId = authResult.user.id;
 
     const profilesForPhone = getProfilesByPhone(phone);
     const uniqueRoles = Array.from(new Set(profilesForPhone.map((profile) => profile.role)));
@@ -67,7 +76,7 @@ export default function AuthPage() {
     const existingProfile = findProfileByPhone(phone);
     if (existingProfile?.role) {
       saveSession({
-        id: existingProfile.id,
+        id: supabaseUserId,
         phone: existingProfile.phone,
         name: existingProfile.name,
         email: email.trim() || existingProfile.email || "",
@@ -84,7 +93,7 @@ export default function AuthPage() {
     }
 
     saveSession({
-      id: createId("session"),
+      id: supabaseUserId || createId("session"),
       phone,
       name,
       email,

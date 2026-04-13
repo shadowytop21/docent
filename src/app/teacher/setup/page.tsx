@@ -11,6 +11,7 @@ import {
   subjectOptions,
 } from "@/lib/data";
 import { createTeacherProfile, findTeacherByUserId, loadAppState, saveSession, updateTeacherProfile } from "@/lib/mock-db";
+import { ensureSupabaseUser } from "@/lib/supabase";
 import { createId } from "@/lib/utils";
 
 const steps = ["Personal info", "Teaching details", "Location & pricing"];
@@ -24,6 +25,7 @@ export default function TeacherSetupPage() {
   const [submitted, setSubmitted] = useState(false);
   const [isEditing, setIsEditing] = useState(false);
   const [priceError, setPriceError] = useState("");
+  const [submitError, setSubmitError] = useState("");
   const [step2Errors, setStep2Errors] = useState<{
     subjects?: string;
     grades?: string;
@@ -191,8 +193,9 @@ export default function TeacherSetupPage() {
     }
   }
 
-  function handleSubmit(event: React.FormEvent<HTMLFormElement>) {
+  async function handleSubmit(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault();
+    setSubmitError("");
     const snapshot = loadAppState();
     const session = snapshot.session;
     if (!session) {
@@ -212,6 +215,63 @@ export default function TeacherSetupPage() {
     }
 
     setPriceError("");
+
+    const authResult = await ensureSupabaseUser();
+    if (authResult.error || !authResult.user || !authResult.client) {
+      const message = authResult.error?.message ?? "Supabase auth user not found.";
+      setSubmitError(message);
+      pushToast({ tone: "error", title: message });
+      return;
+    }
+
+    const supabaseTeacherPayload = {
+      user_id: authResult.user.id,
+      photo_url: profilePhoto,
+      bio: form.bio.slice(0, 200),
+      subjects: form.subjects,
+      grades: form.grades,
+      boards: form.boards,
+      locality: form.locality,
+      price_per_month: parsedPrice,
+      teaches_at: form.teachesAt,
+      availability: form.availability,
+      experience_years: Number(form.experienceYears),
+      whatsapp_number: form.whatsappNumber,
+      status: "pending",
+    };
+
+    const supabase = authResult.client as any;
+
+    if (isEditing) {
+      const { data: teacherUpdateData, error: teacherUpdateError } = await supabase
+        .from("teacher_profiles")
+        .update(supabaseTeacherPayload)
+        .eq("user_id", authResult.user.id)
+        .select();
+
+      if (teacherUpdateError) {
+        console.log("[supabase] teacher_profiles update error", teacherUpdateError);
+        setSubmitError(teacherUpdateError.message);
+        pushToast({ tone: "error", title: `Teacher profile update failed: ${teacherUpdateError.message}` });
+        return;
+      }
+
+      console.log("[supabase] teacher_profiles update success", teacherUpdateData);
+    } else {
+      const { data: teacherInsertData, error: teacherInsertError } = await supabase
+        .from("teacher_profiles")
+        .insert(supabaseTeacherPayload)
+        .select();
+
+      if (teacherInsertError) {
+        console.log("[supabase] teacher_profiles insert error", teacherInsertError);
+        setSubmitError(teacherInsertError.message);
+        pushToast({ tone: "error", title: `Teacher profile save failed: ${teacherInsertError.message}` });
+        return;
+      }
+
+      console.log("[supabase] teacher_profiles insert success", teacherInsertData);
+    }
 
     if (isEditing) {
       updateTeacherProfile({
@@ -253,7 +313,7 @@ export default function TeacherSetupPage() {
       pushToast({ tone: "success", title: "Profile submitted", description: "We'll notify you on WhatsApp once verified." });
     }
 
-    saveSession({ ...session, role: "teacher", id: session.id || createId("session") });
+    saveSession({ ...session, role: "teacher", id: authResult.user.id || session.id || createId("session") });
     setSubmitted(true);
   }
 
@@ -447,6 +507,7 @@ export default function TeacherSetupPage() {
           ) : null}
 
           <div className="flex items-center justify-between gap-3 border-t border-[var(--border)] pt-6">
+            {submitError ? <p className="mr-auto text-sm text-red-600">{submitError}</p> : null}
             <button type="button" onClick={goBack} disabled={currentStep === 0} className="btn-ghost px-5 py-3 text-sm disabled:opacity-40">
               Back
             </button>
