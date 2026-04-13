@@ -3,16 +3,18 @@
 /* v2026-04-13 cache-bust */
 
 :root {
-  --background: #fffbf5;
-  --foreground: #1b2b4b;
+  --background: #fafafa;
+  --foreground: #0f0f1a;
   --surface: #ffffff;
-  --surface-alt: #f7f3ee;
-  --border: #ede8e0;
+  --surface-alt: #eef2ff;
+  --border: #e5e7eb;
   --muted: #6b7280;
-  --primary: #ff6b35;
-  --primary-soft: #fff4ee;
-  --success: #2d6a4f;
-  --success-soft: #edf7f2;
+  --primary: #1a1a2e;
+  --primary-soft: #eef2ff;
+  --accent: #4f46e5;
+  --accent-light: #eef2ff;
+  --success: #059669;
+  --success-soft: #ecfdf5;
   --font-display: "Playfair Display", serif;
   --font-body: "DM Sans", sans-serif;
 }
@@ -44,9 +46,9 @@ body {
   margin: 0;
   min-height: 100vh;
   background:
-    radial-gradient(circle at top left, rgba(255, 107, 53, 0.08), transparent 28%),
-    radial-gradient(circle at top right, rgba(255, 232, 214, 0.55), transparent 22%),
-    linear-gradient(180deg, #fffbf5 0%, #fffaf4 50%, #fef7ef 100%);
+    radial-gradient(circle at top left, rgba(79, 70, 229, 0.08), transparent 28%),
+    radial-gradient(circle at top right, rgba(238, 242, 255, 0.9), transparent 22%),
+    linear-gradient(180deg, #fafafa 0%, #f7f8fc 50%, #f4f5fb 100%);
   color: var(--foreground);
   font-family: var(--font-body);
 }
@@ -64,17 +66,17 @@ h6,
 .card-surface {
   background: var(--surface);
   border: 1px solid var(--border);
-  box-shadow: 0 4px 24px rgba(255, 107, 53, 0.08);
+  box-shadow: 0 8px 24px rgba(26, 26, 46, 0.06);
 }
 
 .card-soft {
   background: rgba(255, 255, 255, 0.92);
-  border: 1px solid rgba(237, 232, 224, 0.9);
-  box-shadow: 0 4px 24px rgba(255, 107, 53, 0.08);
+  border: 1px solid rgba(229, 231, 235, 0.9);
+  box-shadow: 0 8px 24px rgba(26, 26, 46, 0.05);
 }
 
 .soft-shadow {
-  box-shadow: 0 4px 24px rgba(255, 107, 53, 0.08);
+  box-shadow: 0 8px 24px rgba(26, 26, 46, 0.07);
 }
 
 .field,
@@ -93,8 +95,8 @@ h6,
 .field:focus,
 .select:focus,
 .textarea:focus {
-  border-color: var(--primary);
-  box-shadow: 0 0 0 4px rgba(255, 107, 53, 0.12);
+  border-color: var(--accent);
+  box-shadow: 0 0 0 4px rgba(79, 70, 229, 0.14);
 }
 
 .textarea {
@@ -117,25 +119,25 @@ h6,
 }
 
 .btn-primary {
-  background: var(--primary);
+  background: var(--accent);
   color: #fff;
-  box-shadow: 0 10px 24px rgba(255, 107, 53, 0.2);
+  box-shadow: 0 10px 24px rgba(79, 70, 229, 0.22);
 }
 
 .btn-primary:hover {
   transform: translateY(-1px) scale(1.01);
-  background: #ea5d29;
+  background: #4338ca;
 }
 
 .btn-secondary {
   background: #fff;
-  color: var(--primary);
-  border: 1px solid rgba(255, 107, 53, 0.24);
+  color: var(--accent);
+  border: 1px solid rgba(79, 70, 229, 0.3);
 }
 
 .btn-secondary:hover {
   transform: translateY(-1px);
-  border-color: var(--primary);
+  border-color: var(--accent);
 }
 
 .btn-ghost {
@@ -162,9 +164,9 @@ h6,
 }
 
 .pill-active {
-  background: var(--primary);
+  background: var(--accent);
   color: #fff;
-  box-shadow: 0 10px 24px rgba(255, 107, 53, 0.18);
+  box-shadow: 0 10px 24px rgba(79, 70, 229, 0.2);
 }
 
 .badge-verified {
@@ -173,8 +175,8 @@ h6,
 }
 
 .badge-founding {
-  background: var(--primary-soft);
-  color: var(--primary);
+  background: var(--accent-light);
+  color: var(--accent);
 }
 
 .badge-pending {
@@ -183,14 +185,14 @@ h6,
 }
 
 .hero-shell {
-  background: linear-gradient(180deg, rgba(255, 251, 245, 0.96), rgba(255, 255, 255, 0.9));
+  background: linear-gradient(180deg, rgba(250, 250, 250, 0.97), rgba(255, 255, 255, 0.92));
 }
 
 .lotus-pattern {
   background-image:
-    radial-gradient(circle at 25% 25%, rgba(255, 107, 53, 0.05) 0 2px, transparent 2px 24px),
-    radial-gradient(circle at 75% 75%, rgba(27, 43, 75, 0.04) 0 2px, transparent 2px 24px),
-    linear-gradient(135deg, rgba(255, 232, 214, 0.22), transparent 60%);
+    radial-gradient(circle at 25% 25%, rgba(79, 70, 229, 0.07) 0 2px, transparent 2px 24px),
+    radial-gradient(circle at 75% 75%, rgba(26, 26, 46, 0.05) 0 2px, transparent 2px 24px),
+    linear-gradient(135deg, rgba(238, 242, 255, 0.5), transparent 60%);
 }
 
 .whatsapp-pulse {

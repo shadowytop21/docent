@@ -1,3 +1,4 @@
+import Image from "next/image";
 import Link from "next/link";
 import { JoinAsTeacherAction } from "@/components/join-as-teacher-action";
 
@@ -6,9 +7,7 @@ export function SiteHeader() {
     <header className="sticky top-0 z-40 border-b border-borderWarm bg-[rgba(255,251,245,0.86)] backdrop-blur-lg">
       <div className="mx-auto flex max-w-7xl items-center justify-between px-6 py-4 lg:px-8">
         <Link href="/" className="flex items-center gap-3">
-          <div className="flex h-11 w-11 items-center justify-center rounded-2xl bg-navy text-lg font-bold text-white shadow-lg shadow-navy/10">
-            T
-          </div>
+          <Image src="/docent-logo.png" alt="Docent logo" width={140} height={36} className="h-9 w-auto" priority />
           <div>
             <div className="text-lg font-bold tracking-tight text-navy font-display">Docent</div>
             <div className="text-xs font-medium uppercase tracking-[0.25em] text-saffron">
