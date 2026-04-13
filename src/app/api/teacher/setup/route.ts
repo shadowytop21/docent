@@ -146,21 +146,24 @@ export async function POST(request: Request) {
 
     const existingTeacherResult = await adminSupabase
       .from("teacher_profiles")
-      .select("id")
+      .select("id,created_at")
       .eq("user_id", userResult.userId)
-      .maybeSingle();
+      .order("created_at", { ascending: false })
+      .limit(1);
 
     if (existingTeacherResult.error) {
       return NextResponse.json({ message: existingTeacherResult.error.message }, { status: 500 });
     }
 
-    if (existingTeacherResult.data?.id) {
+    const existingTeacherId = existingTeacherResult.data?.[0]?.id;
+
+    if (existingTeacherId) {
       const updateResult = await adminSupabase
         .from("teacher_profiles")
         .update(teacherPayload)
-        .eq("id", existingTeacherResult.data.id)
+        .eq("id", existingTeacherId)
         .select()
-        .single();
+        .maybeSingle();
 
       if (updateResult.error) {
         return NextResponse.json({ message: updateResult.error.message }, { status: 500 });
