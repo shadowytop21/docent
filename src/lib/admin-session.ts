@@ -24,7 +24,10 @@ function getSigningSecret() {
     return null;
   }
 
-  return `${adminEmail}::${adminPassword}`;
+  const normalizedEmail = adminEmail.trim().toLowerCase();
+  const normalizedPassword = adminPassword.replace(/\r?\n/g, "").trim();
+
+  return `${normalizedEmail}::${normalizedPassword}`;
 }
 
 function signPayload(payloadEncoded: string, secret: string) {
@@ -76,7 +79,8 @@ export function verifyAdminSessionToken(token: string | undefined | null) {
       return false;
     }
 
-    return payload.email.toLowerCase() === (process.env.ADMIN_EMAIL ?? "").toLowerCase();
+    const normalizedAdminEmail = (process.env.ADMIN_EMAIL ?? "").trim().toLowerCase();
+    return payload.email.toLowerCase() === normalizedAdminEmail;
   } catch {
     return false;
   }
