@@ -5,7 +5,6 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useToast } from "@/components/toast-provider";
 import { clearSession, findProfileByPhone, getProfilesByPhone, loadAppState, saveSession } from "@/lib/mock-db";
-import { ensureSupabaseUser } from "@/lib/supabase";
 import { createId } from "@/lib/utils";
 
 export default function AuthPage() {
@@ -54,14 +53,6 @@ export default function AuthPage() {
   async function handleSubmit(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault();
 
-    const authResult = await ensureSupabaseUser();
-    if (authResult.error || !authResult.user) {
-      pushToast({ tone: "error", title: authResult.error?.message ?? "Unable to sign in with Supabase." });
-      return;
-    }
-
-    const supabaseUserId = authResult.user.id;
-
     const profilesForPhone = getProfilesByPhone(phone);
     const uniqueRoles = Array.from(new Set(profilesForPhone.map((profile) => profile.role)));
 
@@ -76,7 +67,7 @@ export default function AuthPage() {
     const existingProfile = findProfileByPhone(phone);
     if (existingProfile?.role) {
       saveSession({
-        id: supabaseUserId,
+        id: existingProfile.id,
         phone: existingProfile.phone,
         name: existingProfile.name,
         email: email.trim() || existingProfile.email || "",
@@ -93,7 +84,7 @@ export default function AuthPage() {
     }
 
     saveSession({
-      id: supabaseUserId || createId("session"),
+      id: createId("session"),
       phone,
       name,
       email,
@@ -110,10 +101,10 @@ export default function AuthPage() {
   return (
     <div className="mx-auto grid w-full max-w-6xl gap-8 px-4 py-10 lg:grid-cols-[1fr_0.9fr] lg:px-8 lg:py-20">
       <section className="card-surface rounded-[2rem] p-8">
-        <p className="text-sm uppercase tracking-[0.2em] text-[var(--muted)]">Parent and teacher login</p>
-        <h1 className="mt-3 font-display text-4xl font-bold text-[var(--foreground)]">Sign in to TutorNest</h1>
+        <p className="text-sm uppercase tracking-[0.2em] text-[var(--muted)]">Parent and teacher sign up</p>
+        <h1 className="mt-3 font-display text-4xl font-bold text-[var(--foreground)]">Sign up for TutorNest</h1>
         <p className="mt-4 max-w-xl text-lg leading-8 text-[var(--muted)]">
-          Use your phone number and email to access your teacher or parent flow.
+          New users should sign up with their phone number and email. Existing users can continue with the same details.
         </p>
 
         {hasSession ? (
@@ -143,9 +134,7 @@ export default function AuthPage() {
             <label className="mb-2 block text-sm font-semibold text-[var(--foreground)]">Email</label>
             <input className="field" type="email" value={email} onChange={(event) => setEmail(event.target.value)} placeholder="you@example.com" required />
           </div>
-          <button type="submit" className="btn-primary w-full px-5 py-3">
-            Continue to role selection
-          </button>
+          <button type="submit" className="btn-primary w-full px-5 py-3">Sign up and continue</button>
         </form>
       </section>
 

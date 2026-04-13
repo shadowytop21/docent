@@ -1,5 +1,3 @@
-import "server-only";
-
 import { createHmac, timingSafeEqual } from "node:crypto";
 
 export const ADMIN_SESSION_COOKIE = "tutornest_admin_session";
