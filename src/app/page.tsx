@@ -41,11 +41,10 @@ export default function HomePage() {
           <div className="flex flex-col justify-center stage-reveal">
             <span className="pill badge-founding w-fit">Local Services, Verified Experts</span>
             <h1 className="mt-6 max-w-4xl font-display text-[2.25rem] font-extrabold leading-tight text-[var(--foreground)] lg:text-[4rem]">
-              Find the expert next door, not a random lead online.
+              Find trusted local experts right in your neighbourhood
             </h1>
             <p className="mt-5 max-w-2xl text-lg leading-8 text-[var(--muted)] sm:text-xl">
-              Docent helps families and professionals connect inside the same locality, with verification and clear profiles
-              built into every discovery.
+              Docent connects you with verified tutors, plumbers, electricians and more — all local, all trusted
             </p>
 
             <div className="mt-10 flex flex-col gap-4 sm:flex-row">
@@ -112,7 +111,7 @@ export default function HomePage() {
         <div className="grid gap-6 lg:grid-cols-[1fr_1fr]">
           <div className="card-soft rounded-[2rem] p-8">
             <p className="text-sm uppercase tracking-[0.22em] text-[var(--muted)]">How Docent Works</p>
-            <h2 className="mt-3 font-display text-3xl font-bold text-[var(--foreground)]">Simple steps. Better decisions.</h2>
+            <h2 className="mt-3 font-display text-3xl font-bold text-[var(--foreground)]">Simple, local, and trust-first</h2>
             <div className="mt-6 space-y-4">
               {howItWorks.map((step, index) => (
                 <div key={step.title} className="rounded-3xl border border-[var(--border)] bg-white p-4">
@@ -144,7 +143,7 @@ export default function HomePage() {
           <div className="flex flex-col gap-6 rounded-[2rem] border border-[var(--border)] bg-white p-8 lg:flex-row lg:items-center lg:justify-between">
             <div>
               <p className="text-sm uppercase tracking-[0.2em] text-[var(--muted)]">For Providers</p>
-              <h2 className="mt-3 font-display text-3xl font-bold text-[var(--foreground)]">Get discovered in the area you actually serve.</h2>
+              <h2 className="mt-3 font-display text-3xl font-bold text-[var(--foreground)]">A profile that gets you found locally</h2>
               <p className="mt-3 max-w-2xl text-sm leading-7 text-[var(--muted)]">
                 Start with tutoring now. Add more verified service categories as the platform expands.
               </p>

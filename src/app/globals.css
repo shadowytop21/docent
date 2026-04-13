@@ -3,18 +3,23 @@
 /* v2026-04-13 cache-bust */
 
 :root {
-  --background: #fafafa;
-  --foreground: #0f0f1a;
-  --surface: #ffffff;
-  --surface-alt: #eef2ff;
-  --border: #e5e7eb;
-  --muted: #6b7280;
   --primary: #1a1a2e;
-  --primary-soft: #eef2ff;
   --accent: #4f46e5;
   --accent-light: #eef2ff;
+  --background: #fafafa;
+  --card: #ffffff;
+  --text-primary: #0f0f1a;
+  --text-muted: #6b7280;
+  --border: #e5e7eb;
   --success: #059669;
-  --success-soft: #ecfdf5;
+  --success-light: #ecfdf5;
+
+  --foreground: var(--text-primary);
+  --surface: var(--card);
+  --surface-alt: var(--accent-light);
+  --muted: var(--text-muted);
+  --primary-soft: var(--accent-light);
+  --success-soft: var(--success-light);
   --font-display: "Playfair Display", serif;
   --font-body: "DM Sans", sans-serif;
 }

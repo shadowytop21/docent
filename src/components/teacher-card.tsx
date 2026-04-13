@@ -15,7 +15,7 @@ function Badge({ children, tone = "neutral" }: { children: React.ReactNode; tone
 
 export function TeacherCard({ teacher }: { teacher: TeacherProfile }) {
   return (
-    <article className="group rounded-[1.6rem] border border-[var(--border)] bg-white p-5 shadow-[0_4px_24px_rgba(255,107,53,0.08)] transition-all duration-200 hover:-translate-y-1 hover:shadow-[0_14px_28px_rgba(255,107,53,0.16)]">
+    <article className="group rounded-[1.6rem] border border-[var(--border)] bg-white p-5 shadow-[0_4px_24px_rgba(79,70,229,0.08)] transition-all duration-200 hover:-translate-y-1 hover:shadow-[0_14px_28px_rgba(79,70,229,0.16)]">
       <div className="flex items-start gap-4">
         <div className="relative h-18 w-18 shrink-0">
           <Image
@@ -26,7 +26,7 @@ export function TeacherCard({ teacher }: { teacher: TeacherProfile }) {
             quality={80}
             loading="lazy"
             unoptimized
-            className={`h-18 w-18 rounded-full object-cover ring-4 ${teacher.status === "verified" ? "ring-[rgba(255,107,53,0.4)]" : "ring-[var(--border)]"}`}
+            className={`h-18 w-18 rounded-full object-cover ring-4 ${teacher.status === "verified" ? "ring-[rgba(79,70,229,0.4)]" : "ring-[var(--border)]"}`}
           />
           <span className={`absolute -right-1 bottom-0 h-4 w-4 rounded-full border-2 border-white ${teacher.status === "verified" ? "bg-[var(--success)]" : teacher.status === "pending" ? "bg-slate-400" : "bg-rose-500"}`} />
         </div>
