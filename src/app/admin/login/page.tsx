@@ -1,11 +1,9 @@
 "use client";
 
 import { useState } from "react";
-import { useRouter } from "next/navigation";
 import { useToast } from "@/components/toast-provider";
 
 export default function AdminLoginPage() {
-  const router = useRouter();
   const { pushToast } = useToast();
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
@@ -38,12 +36,8 @@ export default function AdminLoginPage() {
         return;
       }
 
-      pushToast({ tone: "success", title: "Admin login successful" });
-      router.replace("/admin");
-      router.refresh();
-
       // Force full navigation so server-side cookie checks run immediately.
-      window.location.href = "/admin";
+      window.location.replace(`/admin?t=${Date.now()}`);
       return;
     } finally {
       setSubmitting(false);
