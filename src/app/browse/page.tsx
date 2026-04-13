@@ -1,8 +1,6 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
-import Link from "next/link";
-import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { JoinAsTeacherAction } from "@/components/join-as-teacher-action";
 import { TeacherCard } from "@/components/teacher-card";
 import { useToast } from "@/components/toast-provider";
@@ -18,8 +16,10 @@ import {
   type TeacherRecord,
 } from "@/lib/data";
 import { loadAppState } from "@/lib/mock-db";
+import { usePathname, useRouter, useSearchParams } from "next/navigation";
 
 const categoryChips = ["All", ...teacherSubjects.slice(0, 6)];
+const PAGE_SIZE = 12;
 
 export default function BrowsePage() {
   const searchParams = useSearchParams();
@@ -35,45 +35,96 @@ export default function BrowsePage() {
   const [priceMax, setPriceMax] = useState(Number(searchParams.get("priceMax") ?? 5000));
   const [mounted, setMounted] = useState(false);
   const [catalogLoaded, setCatalogLoaded] = useState(false);
+  const [currentPage, setCurrentPage] = useState(1);
+  const [isLoadingMore, setIsLoadingMore] = useState(false);
   const [remoteTeachers, setRemoteTeachers] = useState<TeacherRecord[] | null>(null);
-  const [remoteReviews, setRemoteReviews] = useState<ReviewRecord[] | null>(null);
+  const [remoteTotal, setRemoteTotal] = useState(0);
 
   useEffect(() => {
     setMounted(true);
   }, []);
 
   useEffect(() => {
+    setCurrentPage(1);
+  }, [query, subject, grade, locality, board, availability, priceMax]);
+
+  useEffect(() => {
+    let active = true;
+
     async function loadRemoteCatalog() {
-      setCatalogLoaded(false);
-      const response = await fetch("/api/browse", { cache: "no-store" });
-      if (!response.ok) {
-        setCatalogLoaded(true);
+      if (currentPage === 1) {
+        setCatalogLoaded(false);
+      } else {
+        setIsLoadingMore(true);
+      }
+
+      const params = new URLSearchParams();
+      params.set("page", String(currentPage));
+      params.set("limit", String(PAGE_SIZE));
+      if (query) params.set("q", query);
+      if (subject) params.set("subject", subject);
+      if (grade) params.set("grade", grade);
+      if (locality) params.set("locality", locality);
+      if (board) params.set("board", board);
+      if (availability) params.set("availability", availability);
+      if (priceMax < 5000) params.set("priceMax", String(priceMax));
+
+      const response = await fetch(`/api/browse?${params.toString()}`, { cache: "no-store" });
+      if (!active) {
         return;
       }
 
-      const payload = (await response.json()) as { teachers?: TeacherRecord[]; reviews?: ReviewRecord[] };
-      setRemoteTeachers(payload.teachers ?? []);
-      setRemoteReviews(payload.reviews ?? []);
+      if (!response.ok) {
+        if (currentPage === 1) {
+          setRemoteTeachers(null);
+          setRemoteTotal(0);
+        }
+        setCatalogLoaded(true);
+        setIsLoadingMore(false);
+        return;
+      }
+
+      const payload = (await response.json()) as {
+        teachers?: TeacherRecord[];
+        total?: number;
+        offline?: boolean;
+      };
+
+      if (payload.offline) {
+        if (currentPage === 1) {
+          setRemoteTeachers(null);
+          setRemoteTotal(0);
+        }
+        setCatalogLoaded(true);
+        setIsLoadingMore(false);
+        return;
+      }
+
+      const incoming = payload.teachers ?? [];
+      if (currentPage === 1) {
+        setRemoteTeachers(incoming);
+      } else {
+        setRemoteTeachers((existing) => {
+          const merged = [...(existing ?? []), ...incoming];
+          const uniqueById = new Map<string, TeacherRecord>();
+          for (const teacher of merged) {
+            uniqueById.set(teacher.id, teacher);
+          }
+          return Array.from(uniqueById.values());
+        });
+      }
+
+      setRemoteTotal(payload.total ?? 0);
       setCatalogLoaded(true);
+      setIsLoadingMore(false);
     }
 
     loadRemoteCatalog();
-  }, []);
 
-  useEffect(() => {
-    function reloadCatalog() {
-      void fetch("/api/browse", { cache: "no-store" })
-        .then((response) => response.json())
-        .then((payload: { teachers?: TeacherRecord[]; reviews?: ReviewRecord[] }) => {
-          setRemoteTeachers(payload.teachers ?? []);
-          setRemoteReviews(payload.reviews ?? []);
-        })
-        .catch(() => undefined);
-    }
-
-    window.addEventListener("focus", reloadCatalog);
-    return () => window.removeEventListener("focus", reloadCatalog);
-  }, []);
+    return () => {
+      active = false;
+    };
+  }, [availability, board, currentPage, grade, locality, priceMax, query, subject]);
 
   useEffect(() => {
     const current = new URLSearchParams(searchParams.toString());
@@ -89,26 +140,30 @@ export default function BrowsePage() {
     router.replace(path, { scroll: false });
   }, [availability, board, grade, locality, pathname, priceMax, query, router, searchParams, subject]);
 
-  const fallbackSnapshot = mounted ? loadAppState() : { teachers: [], reviews: [] };
-  const snapshot = {
-    teachers: remoteTeachers ?? fallbackSnapshot.teachers,
-    reviews: remoteReviews ?? fallbackSnapshot.reviews,
-  };
-
-  const teachers = useMemo(
+  const fallbackSnapshot = mounted ? loadAppState() : { teachers: [], reviews: [] as ReviewRecord[] };
+  const localTeachers = useMemo(
     () =>
-      computeFilteredTeachers(snapshot.teachers ?? [], {
-        query,
-        subject: subject || undefined,
-        grade: grade || undefined,
-        locality: locality || undefined,
-        board: board || undefined,
-        availability: availability || undefined,
-        priceMax,
-        includePending: true,
-      }, snapshot.reviews ?? []),
-    [availability, board, grade, locality, priceMax, query, snapshot.reviews, snapshot.teachers, subject],
+      computeFilteredTeachers(
+        fallbackSnapshot.teachers ?? [],
+        {
+          query,
+          subject: subject || undefined,
+          grade: grade || undefined,
+          locality: locality || undefined,
+          board: board || undefined,
+          availability: availability || undefined,
+          priceMax,
+          includePending: true,
+        },
+        fallbackSnapshot.reviews ?? [],
+      ),
+    [availability, board, fallbackSnapshot.reviews, fallbackSnapshot.teachers, grade, locality, priceMax, query, subject],
   );
+
+  const localVisible = localTeachers.slice(0, currentPage * PAGE_SIZE);
+  const teachers = remoteTeachers ?? localVisible;
+  const totalCount = remoteTeachers !== null ? remoteTotal : localTeachers.length;
+  const hasMore = teachers.length < totalCount;
 
   function resetFilters() {
     setQuery("");
@@ -118,6 +173,7 @@ export default function BrowsePage() {
     setBoard("");
     setAvailability("");
     setPriceMax(5000);
+    setCurrentPage(1);
     pushToast({ tone: "neutral", title: "Filters cleared" });
   }
 
@@ -132,7 +188,7 @@ export default function BrowsePage() {
     <div className="mx-auto w-full max-w-7xl px-4 py-10 sm:px-6 lg:px-8 lg:py-20">
       {!catalogLoaded ? (
         <section className="card-surface rounded-[2rem] p-10 text-center text-[var(--muted)]">
-          Loading shared tutors...
+          Loading shared experts...
         </section>
       ) : null}
 
@@ -140,12 +196,11 @@ export default function BrowsePage() {
         <div className="flex flex-col gap-6 lg:flex-row lg:items-end lg:justify-between">
           <div>
             <p className="text-sm uppercase tracking-[0.2em] text-[var(--muted)]">Browse Experts</p>
-            <h1 className="mt-3 font-display text-4xl font-bold text-[var(--foreground)]">Find tutors in Mathura</h1>
+            <h1 className="mt-3 font-display text-4xl font-bold text-[var(--foreground)]">Find experts in your area</h1>
             <p className="mt-4 max-w-2xl text-lg leading-8 text-[var(--muted)]">
-              Search by subject, grade, locality, board, price, or availability. Verified teachers appear first.
+              Search by service, locality, availability, and budget. Verified experts appear first.
             </p>
           </div>
-          {/* Use centralized role-aware join flow so all entry points behave consistently. */}
           <JoinAsTeacherAction className="btn-primary px-6 py-3 text-sm">
             Join as Expert
           </JoinAsTeacherAction>
@@ -154,7 +209,7 @@ export default function BrowsePage() {
         <div className="mt-8 grid gap-4 lg:grid-cols-[1.2fr_0.8fr]">
           <div className="rounded-[1.5rem] bg-[rgba(255,251,245,0.92)] p-4">
             <label className="mb-2 block text-sm font-semibold text-[var(--foreground)]">Search</label>
-            <input className="field" value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Maths, Civil Lines, Class 9..." />
+            <input className="field" value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Tutors, electricians, locality..." />
           </div>
           <div className="rounded-[1.5rem] bg-[rgba(255,251,245,0.92)] p-4">
             <label className="mb-2 block text-sm font-semibold text-[var(--foreground)]">Price max: ₹{priceMax}</label>
@@ -204,7 +259,7 @@ export default function BrowsePage() {
         </div>
 
         <div className="mt-6 flex flex-wrap items-center justify-between gap-3 border-t border-[var(--border)] pt-4 text-sm text-[var(--muted)]">
-          <p>{teachers.length} tutors found</p>
+          <p>{totalCount} experts found</p>
           <button type="button" onClick={resetFilters} className="btn-ghost px-4 py-2 text-sm font-semibold">
             Clear all filters
           </button>
@@ -217,15 +272,23 @@ export default function BrowsePage() {
         ) : (
           <div className="card-surface col-span-full rounded-[2rem] p-10 text-center">
             <div className="mx-auto flex h-20 w-20 items-center justify-center rounded-full bg-[var(--primary-soft)] text-3xl">🌿</div>
-            <h2 className="mt-4 font-display text-3xl font-bold text-[var(--foreground)]">No tutors found for these filters. Try adjusting your search.</h2>
-            <p className="mt-3 text-lg leading-8 text-[var(--muted)]">You can broaden subject, board, locality, or price to discover more tutors.</p>
+            <h2 className="mt-4 font-display text-3xl font-bold text-[var(--foreground)]">No experts found for these filters. Try adjusting your search.</h2>
+            <p className="mt-3 text-lg leading-8 text-[var(--muted)]">You can broaden category, locality, or price to discover more results.</p>
             <div className="mt-6 flex justify-center gap-3">
               <button type="button" onClick={resetFilters} className="btn-primary px-6 py-3 text-sm">Clear all filters</button>
-              <JoinAsTeacherAction className="btn-secondary px-6 py-3 text-sm">Add a tutor profile</JoinAsTeacherAction>
+              <JoinAsTeacherAction className="btn-secondary px-6 py-3 text-sm">Add an expert profile</JoinAsTeacherAction>
             </div>
           </div>
         )}
       </section>
+
+      {teachers.length && hasMore ? (
+        <div className="mt-8 flex justify-center">
+          <button type="button" className="btn-primary px-6 py-3 text-sm" onClick={() => setCurrentPage((value) => value + 1)} disabled={isLoadingMore}>
+            {isLoadingMore ? "Loading..." : "Load More"}
+          </button>
+        </div>
+      ) : null}
     </div>
   );
 }

@@ -1,21 +1,57 @@
 import { NextResponse } from "next/server";
 import { getSupabaseServiceClient } from "@/lib/supabase-server";
 
-export async function GET() {
+export async function GET(request: Request) {
   try {
+    const { searchParams } = new URL(request.url);
+    const page = Math.max(1, Number(searchParams.get("page") ?? "1"));
+    const limit = Math.min(24, Math.max(1, Number(searchParams.get("limit") ?? "12")));
+    const start = (page - 1) * limit;
+    const end = start + limit - 1;
+
+    const query = (searchParams.get("q") ?? "").trim().toLowerCase();
+    const subject = (searchParams.get("subject") ?? "").trim();
+    const grade = (searchParams.get("grade") ?? "").trim();
+    const locality = (searchParams.get("locality") ?? "").trim();
+    const board = (searchParams.get("board") ?? "").trim();
+    const availability = (searchParams.get("availability") ?? "").trim();
+    const priceMax = Number(searchParams.get("priceMax") ?? "0");
+
     const supabase = getSupabaseServiceClient();
     if (!supabase) {
-      return NextResponse.json({ teachers: [], reviews: [], offline: true });
+      return NextResponse.json({ teachers: [], reviews: [], total: 0, page, pageSize: limit, offline: true });
     }
 
     const adminSupabase = supabase as any;
-    const { data: teacherRows, error: teacherError } = await adminSupabase
+    let teacherQuery = adminSupabase
       .from("teacher_profiles")
-      .select("id,user_id,photo_url,bio,subjects,grades,boards,locality,price_per_month,teaches_at,availability,experience_years,status,is_founding_member,created_at")
-      .eq("status", "verified");
+      .select("id,user_id,photo_url,bio,subjects,grades,boards,locality,price_per_month,teaches_at,availability,experience_years,status,is_founding_member,created_at", { count: "exact" })
+      .eq("status", "verified")
+      .range(start, end);
+
+    if (subject) {
+      teacherQuery = teacherQuery.contains("subjects", [subject]);
+    }
+    if (grade) {
+      teacherQuery = teacherQuery.contains("grades", [grade]);
+    }
+    if (board) {
+      teacherQuery = teacherQuery.contains("boards", [board]);
+    }
+    if (availability) {
+      teacherQuery = teacherQuery.contains("availability", [availability]);
+    }
+    if (locality) {
+      teacherQuery = teacherQuery.eq("locality", locality);
+    }
+    if (Number.isFinite(priceMax) && priceMax > 0) {
+      teacherQuery = teacherQuery.lte("price_per_month", priceMax);
+    }
+
+    const { data: teacherRows, error: teacherError, count } = await teacherQuery;
 
     if (teacherError || !teacherRows) {
-      return NextResponse.json({ teachers: [], reviews: [], offline: true });
+      return NextResponse.json({ teachers: [], reviews: [], total: 0, page, pageSize: limit, offline: true });
     }
 
     const userIds = teacherRows.map((row: any) => row.user_id).filter(Boolean);
@@ -48,7 +84,8 @@ export async function GET() {
       ratingsByTeacherId.set(review.teacher_id, aggregate);
     }
 
-    const teachers = (teacherRows as any[]).map((row) => {
+    const teachers = (teacherRows as any[])
+      .map((row) => {
       const aggregate = ratingsByTeacherId.get(row.id);
       const reviewsCount = aggregate?.count ?? 0;
       const rating = reviewsCount ? Math.round((aggregate!.total / reviewsCount) * 10) / 10 : 0;
@@ -77,10 +114,21 @@ export async function GET() {
         reviews_count: reviewsCount,
         reviewCount: reviewsCount,
       };
-    });
+      })
+      .filter((teacher) => {
+        if (!query) {
+          return true;
+        }
 
-    return NextResponse.json({ teachers, reviews: normalizedReviews, offline: false });
+        const searchable = [teacher.name, teacher.bio, teacher.locality, ...teacher.subjects, ...teacher.grades]
+          .join(" ")
+          .toLowerCase();
+
+        return searchable.includes(query);
+      });
+
+    return NextResponse.json({ teachers, reviews: normalizedReviews, total: count ?? 0, page, pageSize: limit, offline: false });
   } catch {
-    return NextResponse.json({ teachers: [], reviews: [], offline: true });
+    return NextResponse.json({ teachers: [], reviews: [], total: 0, page: 1, pageSize: 12, offline: true });
   }
 }
