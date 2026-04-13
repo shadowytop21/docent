@@ -1,16 +1,9 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { useToast } from "@/components/toast-provider";
 import type { AppSnapshot } from "@/lib/mock-db";
-import {
-  deleteReviewById,
-  loadAppState,
-  setTeacherStatus,
-  toggleFoundingMember,
-} from "@/lib/mock-db";
-import { getSupabaseBrowserClient } from "@/lib/supabase";
 import { formatCurrency, formatDate } from "@/lib/utils";
 
 export function AdminPanel() {
@@ -24,118 +17,16 @@ export function AdminPanel() {
   });
   const [isRemoteData, setIsRemoteData] = useState(false);
 
-  const stats = {
-    totalTeachers: snapshot.teachers.length,
-    pendingTeachers: snapshot.teachers.filter((teacher) => teacher.status === "pending").length,
-    verifiedTeachers: snapshot.teachers.filter((teacher) => teacher.status === "verified").length,
-    totalParents: snapshot.profiles.filter((profile) => profile.role === "parent").length,
-  };
-
   const loadModerationSnapshot = useCallback(async () => {
-    const localSnapshot = loadAppState();
-    const client = getSupabaseBrowserClient();
-
-    if (!client) {
-      setSnapshot(localSnapshot);
+    const response = await fetch("/api/admin/moderation", { cache: "no-store" });
+    if (!response.ok) {
+      setSnapshot({ profiles: [], teachers: [], reviews: [], session: null });
       setIsRemoteData(false);
       return;
     }
 
-    const supabase = client as any;
-    const [teacherResponse, profileResponse, reviewResponse] = await Promise.all([
-      supabase
-        .from("teacher_profiles")
-        .select("id,user_id,photo_url,bio,subjects,grades,boards,locality,price_per_month,teaches_at,availability,experience_years,whatsapp_number,status,is_founding_member,created_at"),
-      supabase.from("profiles").select("id,role,name,phone,created_at"),
-      supabase.from("reviews").select("id,teacher_id,parent_id,rating,comment,created_at"),
-    ]);
-
-    if (teacherResponse.error || profileResponse.error || reviewResponse.error) {
-      setSnapshot(localSnapshot);
-      setIsRemoteData(false);
-      return;
-    }
-
-    const teacherRows = (teacherResponse.data ?? []) as any[];
-    const profileRows = (profileResponse.data ?? []) as any[];
-    const reviewRows = (reviewResponse.data ?? []) as any[];
-
-    const profileById = new Map<string, { name: string; phone: string; role: "teacher" | "parent"; created_at: string }>(
-      profileRows.map((row) => [
-        row.id,
-        {
-          name: row.name ?? "",
-          phone: row.phone ?? "",
-          role: row.role,
-          created_at: row.created_at ?? new Date().toISOString(),
-        },
-      ]),
-    );
-
-    const reviewByTeacherId = new Map<string, { total: number; count: number }>();
-    for (const review of reviewRows) {
-      const aggregate = reviewByTeacherId.get(review.teacher_id) ?? { total: 0, count: 0 };
-      aggregate.total += review.rating;
-      aggregate.count += 1;
-      reviewByTeacherId.set(review.teacher_id, aggregate);
-    }
-
-    const teachers = teacherRows.map((row) => {
-      const profile = profileById.get(row.user_id);
-      const aggregate = reviewByTeacherId.get(row.id);
-      const reviewsCount = aggregate?.count ?? 0;
-      const rating = reviewsCount ? Math.round((aggregate!.total / reviewsCount) * 10) / 10 : 0;
-
-      return {
-        id: row.id,
-        user_id: row.user_id,
-        name: profile?.name ?? "Tutor",
-        photo_url: row.photo_url ?? "",
-        bio: row.bio ?? "",
-        subjects: row.subjects ?? [],
-        grades: row.grades ?? [],
-        boards: row.boards ?? [],
-        locality: row.locality ?? "",
-        price_per_month: row.price_per_month ?? 0,
-        teaches_at: row.teaches_at,
-        availability: row.availability ?? [],
-        experience_years: row.experience_years ?? 0,
-        whatsapp_number: row.whatsapp_number ?? profile?.phone ?? "",
-        status: row.status,
-        public_status: row.status,
-        is_resubmission: false,
-        is_founding_member: Boolean(row.is_founding_member),
-        created_at: row.created_at ?? new Date().toISOString(),
-        rating,
-        reviews_count: reviewsCount,
-        reviewCount: reviewsCount,
-      };
-    });
-
-    const profiles = profileRows.map((row) => ({
-      id: row.id,
-      role: row.role,
-      name: row.name ?? "",
-      phone: row.phone ?? "",
-      created_at: row.created_at ?? new Date().toISOString(),
-    }));
-
-    const reviews = reviewRows.map((row) => ({
-      id: row.id,
-      teacher_id: row.teacher_id,
-      parent_id: row.parent_id,
-      parent_name: profileById.get(row.parent_id)?.name ?? "Parent",
-      rating: row.rating,
-      comment: row.comment,
-      created_at: row.created_at,
-    }));
-
-    setSnapshot({
-      profiles,
-      teachers,
-      reviews,
-      session: localSnapshot.session,
-    });
+    const data = (await response.json()) as AppSnapshot;
+    setSnapshot(data);
     setIsRemoteData(true);
   }, []);
 
@@ -151,93 +42,78 @@ export function AdminPanel() {
   }
 
   async function approveTeacher(teacherId: string) {
-    const client = getSupabaseBrowserClient();
-    if (client) {
-      const supabase = client as any;
-      const { error } = await supabase.from("teacher_profiles").update({ status: "verified" }).eq("id", teacherId);
-      if (error) {
-        pushToast({ tone: "error", title: `Approve failed: ${error.message}` });
-        return;
-      }
+    const response = await fetch(`/api/admin/teachers/${teacherId}`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ status: "verified" }),
+    });
 
-      await loadModerationSnapshot();
-      pushToast({ tone: "success", title: "Teacher approved" });
+    if (!response.ok) {
+      const payload = (await response.json().catch(() => ({}))) as { message?: string };
+      pushToast({ tone: "error", title: payload.message ?? "Approve failed." });
       return;
     }
 
-    setTeacherStatus(teacherId, "verified");
-    setSnapshot(loadAppState());
+    await loadModerationSnapshot();
     pushToast({ tone: "success", title: "Teacher approved" });
   }
 
   async function rejectTeacher(teacherId: string) {
-    const client = getSupabaseBrowserClient();
-    if (client) {
-      const supabase = client as any;
-      const { error } = await supabase.from("teacher_profiles").update({ status: "rejected" }).eq("id", teacherId);
-      if (error) {
-        pushToast({ tone: "error", title: `Reject failed: ${error.message}` });
-        return;
-      }
+    const response = await fetch(`/api/admin/teachers/${teacherId}`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ status: "rejected" }),
+    });
 
-      await loadModerationSnapshot();
-      pushToast({ tone: "warning", title: "Teacher rejected" });
+    if (!response.ok) {
+      const payload = (await response.json().catch(() => ({}))) as { message?: string };
+      pushToast({ tone: "error", title: payload.message ?? "Reject failed." });
       return;
     }
 
-    setTeacherStatus(teacherId, "rejected");
-    setSnapshot(loadAppState());
+    await loadModerationSnapshot();
     pushToast({ tone: "warning", title: "Teacher rejected" });
   }
 
   async function toggleFounder(teacherId: string) {
-    const client = getSupabaseBrowserClient();
-    if (client) {
-      const current = snapshot.teachers.find((teacher) => teacher.id === teacherId);
-      if (!current) {
-        return;
-      }
+    const current = snapshot.teachers.find((teacher) => teacher.id === teacherId);
+    const response = await fetch(`/api/admin/teachers/${teacherId}`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ is_founding_member: !current?.is_founding_member }),
+    });
 
-      const supabase = client as any;
-      const { error } = await supabase
-        .from("teacher_profiles")
-        .update({ is_founding_member: !current.is_founding_member })
-        .eq("id", teacherId);
-
-      if (error) {
-        pushToast({ tone: "error", title: `Update failed: ${error.message}` });
-        return;
-      }
-
-      await loadModerationSnapshot();
-      pushToast({ tone: "success", title: "Founding badge updated" });
+    if (!response.ok) {
+      const payload = (await response.json().catch(() => ({}))) as { message?: string };
+      pushToast({ tone: "error", title: payload.message ?? "Update failed." });
       return;
     }
 
-    toggleFoundingMember(teacherId);
-    setSnapshot(loadAppState());
+    await loadModerationSnapshot();
     pushToast({ tone: "success", title: "Founding badge updated" });
   }
 
   async function removeReview(reviewId: string) {
-    const client = getSupabaseBrowserClient();
-    if (client) {
-      const supabase = client as any;
-      const { error } = await supabase.from("reviews").delete().eq("id", reviewId);
-      if (error) {
-        pushToast({ tone: "error", title: `Delete failed: ${error.message}` });
-        return;
-      }
+    const response = await fetch(`/api/admin/reviews/${reviewId}`, {
+      method: "DELETE",
+    });
 
-      await loadModerationSnapshot();
-      pushToast({ tone: "success", title: "Review deleted" });
+    if (!response.ok) {
+      const payload = (await response.json().catch(() => ({}))) as { message?: string };
+      pushToast({ tone: "error", title: payload.message ?? "Delete failed." });
       return;
     }
 
-    deleteReviewById(reviewId);
-    setSnapshot(loadAppState());
+    await loadModerationSnapshot();
     pushToast({ tone: "success", title: "Review deleted" });
   }
+
+  const stats = {
+    totalTeachers: snapshot.teachers.length,
+    pendingTeachers: snapshot.teachers.filter((teacher) => teacher.status === "pending").length,
+    verifiedTeachers: snapshot.teachers.filter((teacher) => teacher.status === "verified").length,
+    totalParents: snapshot.profiles.filter((profile) => profile.role === "parent").length,
+  };
 
   return (
     <div className="mx-auto w-full max-w-7xl px-4 py-10 sm:px-6 lg:px-8 lg:py-16">

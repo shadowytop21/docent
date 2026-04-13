@@ -4,7 +4,6 @@ import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { useToast } from "@/components/toast-provider";
 import { getProfilesByPhone, loadAppState, saveSession, updateProfile } from "@/lib/mock-db";
-import { ensureSupabaseUser } from "@/lib/supabase";
 
 export default function OnboardingPage() {
   const router = useRouter();
@@ -38,33 +37,31 @@ export default function OnboardingPage() {
       return;
     }
 
-    const authResult = await ensureSupabaseUser();
-    if (authResult.error || !authResult.user || !authResult.client) {
-      pushToast({ tone: "error", title: authResult.error?.message ?? "Supabase user not found." });
+    if (!snapshot.session.email || !snapshot.session.name || !snapshot.session.phone) {
+      pushToast({ tone: "error", title: "Missing session details." });
       return;
     }
 
-    const profilePayload = {
-      id: authResult.user.id,
-      role,
-      name: snapshot.session.name,
-      phone: snapshot.session.phone,
-    };
+    const response = await fetch("/api/account/profile", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        email: snapshot.session.email,
+        name: snapshot.session.name,
+        phone: snapshot.session.phone,
+        role,
+      }),
+    });
 
-    const supabase = authResult.client as any;
+    const payload = (await response.json().catch(() => ({}))) as { message?: string; userId?: string };
 
-    const { data: profileInsertData, error: profileInsertError } = await supabase
-      .from("profiles")
-      .upsert(profilePayload, { onConflict: "id" })
-      .select();
-
-    if (profileInsertError) {
-      console.log("[supabase] profiles upsert error", profileInsertError);
-      pushToast({ tone: "error", title: `Profile save failed: ${profileInsertError.message}` });
+    if (!response.ok || !payload.userId) {
+      pushToast({ tone: "error", title: payload.message ?? "Profile save failed." });
       return;
     }
 
-    console.log("[supabase] profiles upsert success", profileInsertData);
 
     const conflictingPhoneProfile = getProfilesByPhone(snapshot.session.phone).find(
       (profile) => profile.id !== snapshot.session?.id && profile.role !== role,
@@ -78,7 +75,7 @@ export default function OnboardingPage() {
       return;
     }
 
-    const session = { ...snapshot.session, id: authResult.user.id, role };
+    const session = { ...snapshot.session, id: payload.userId, role };
     saveSession(session);
     updateProfile({
       id: session.id,
