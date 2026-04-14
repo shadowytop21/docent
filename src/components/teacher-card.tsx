@@ -1,3 +1,4 @@
+import { memo } from "react";
 import Link from "next/link";
 import { type TeacherProfile } from "@/lib/data";
 
@@ -12,7 +13,7 @@ function Badge({ children, tone = "neutral" }: { children: React.ReactNode; tone
   return <span className={`inline-flex items-center rounded-full px-3 py-1 text-xs font-semibold ${styles}`}>{children}</span>;
 }
 
-export function TeacherCard({ teacher }: { teacher: TeacherProfile }) {
+function TeacherCardImpl({ teacher }: { teacher: TeacherProfile }) {
   const initials = teacher.name
     .split(" ")
     .map((part) => part[0])
@@ -83,3 +84,5 @@ export function TeacherCard({ teacher }: { teacher: TeacherProfile }) {
     </article>
   );
 }
+
+export const TeacherCard = memo(TeacherCardImpl);

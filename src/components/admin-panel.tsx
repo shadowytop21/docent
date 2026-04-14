@@ -28,6 +28,36 @@ export function AdminPanel() {
   const [teacherStatusFilter, setTeacherStatusFilter] = useState<"all" | "pending" | "verified" | "rejected">("all");
   const [accountRoleFilter, setAccountRoleFilter] = useState<"all" | "teacher" | "parent">("all");
 
+  function updateTeacherLocally(teacherId: string, updater: (teacher: AppSnapshot["teachers"][number]) => AppSnapshot["teachers"][number] | null) {
+    setSnapshot((current) => {
+      const teachers = current.teachers
+        .map((teacher) => {
+          if (teacher.id !== teacherId) {
+            return teacher;
+          }
+
+          return updater(teacher);
+        })
+        .filter((teacher): teacher is AppSnapshot["teachers"][number] => Boolean(teacher));
+
+      return { ...current, teachers };
+    });
+  }
+
+  function removeAccountLocally(profileId: string) {
+    setSnapshot((current) => {
+      const teachers = current.teachers.filter((teacher) => teacher.user_id !== profileId && teacher.id !== profileId);
+      const profiles = current.profiles.filter((profile) => profile.id !== profileId);
+      const reviews = current.reviews.filter((review) => review.parent_id !== profileId && !teachers.some((teacher) => teacher.id === review.teacher_id));
+
+      return { ...current, teachers, profiles, reviews };
+    });
+  }
+
+  function refreshInBackground() {
+    void loadModerationSnapshot();
+  }
+
   const loadModerationSnapshot = useCallback(async () => {
     const response = await fetch("/api/admin/moderation", { cache: "no-store" });
     if (!response.ok) {
@@ -79,7 +109,8 @@ export function AdminPanel() {
       return;
     }
 
-    await loadModerationSnapshot();
+    updateTeacherLocally(teacherId, (teacher) => ({ ...teacher, status: "verified" }));
+    refreshInBackground();
     pushToast({ tone: "success", title: "Teacher approved" });
   }
 
@@ -103,7 +134,8 @@ export function AdminPanel() {
       return;
     }
 
-    await loadModerationSnapshot();
+    updateTeacherLocally(teacherId, (teacher) => ({ ...teacher, status: "rejected" }));
+    refreshInBackground();
     pushToast({ tone: "warning", title: "Teacher rejected" });
   }
 
@@ -125,7 +157,8 @@ export function AdminPanel() {
       return;
     }
 
-    await loadModerationSnapshot();
+    updateTeacherLocally(teacherId, (teacher) => ({ ...teacher, is_founding_member: nextValue }));
+    refreshInBackground();
     pushToast({ tone: "success", title: nextValue ? "Marked as founding member" : "Removed founding member badge" });
   }
 
@@ -147,7 +180,8 @@ export function AdminPanel() {
       return;
     }
 
-    await loadModerationSnapshot();
+    setSnapshot((current) => ({ ...current, reviews: current.reviews.filter((review) => review.id !== reviewId) }));
+    refreshInBackground();
     pushToast({ tone: "success", title: "Review deleted" });
   }
 
@@ -169,7 +203,8 @@ export function AdminPanel() {
       return;
     }
 
-    await loadModerationSnapshot();
+    removeAccountLocally(profileId);
+    refreshInBackground();
     pushToast({ tone: "warning", title: "Account deleted" });
   }
 
