@@ -4,6 +4,7 @@ import { getSupabaseServiceClient } from "@/lib/supabase-server";
 export async function GET(request: Request) {
   try {
     const { searchParams } = new URL(request.url);
+    const includeFacets = searchParams.get("includeFacets") !== "0";
     const includeReviews = searchParams.get("includeReviews") === "1";
     const page = Math.max(1, Number(searchParams.get("page") ?? "1"));
     const limit = Math.min(24, Math.max(1, Number(searchParams.get("limit") ?? "12")));
@@ -137,7 +138,44 @@ export async function GET(request: Request) {
         return searchable.includes(query);
       });
 
-    const response = NextResponse.json({ teachers, reviews: normalizedReviews, total: count ?? 0, page, pageSize: limit, offline: false });
+    const facets = {
+      subjects: {} as Record<string, number>,
+      grades: {} as Record<string, number>,
+      localities: {} as Record<string, number>,
+      boards: {} as Record<string, number>,
+      availability: {} as Record<string, number>,
+    };
+
+    if (includeFacets) {
+      const { data: facetRows } = await adminSupabase
+        .from("teacher_profiles")
+        .select("subjects,grades,boards,locality,availability")
+        .neq("status", "rejected");
+
+      for (const row of (facetRows ?? []) as any[]) {
+        for (const value of (row.subjects ?? []) as string[]) {
+          facets.subjects[value] = (facets.subjects[value] ?? 0) + 1;
+        }
+
+        for (const value of (row.grades ?? []) as string[]) {
+          facets.grades[value] = (facets.grades[value] ?? 0) + 1;
+        }
+
+        for (const value of (row.boards ?? []) as string[]) {
+          facets.boards[value] = (facets.boards[value] ?? 0) + 1;
+        }
+
+        for (const value of (row.availability ?? []) as string[]) {
+          facets.availability[value] = (facets.availability[value] ?? 0) + 1;
+        }
+
+        if (row.locality) {
+          facets.localities[row.locality] = (facets.localities[row.locality] ?? 0) + 1;
+        }
+      }
+    }
+
+    const response = NextResponse.json({ teachers, reviews: normalizedReviews, total: count ?? 0, page, pageSize: limit, facets, offline: false });
     response.headers.set("Cache-Control", "s-maxage=60, stale-while-revalidate=300");
     return response;
   } catch {

@@ -21,6 +21,22 @@ import { usePathname, useRouter, useSearchParams } from "next/navigation";
 const categoryChips = ["All", ...teacherSubjects];
 const PAGE_SIZE = 12;
 
+type FacetCounts = {
+  subjects: Record<string, number>;
+  grades: Record<string, number>;
+  localities: Record<string, number>;
+  boards: Record<string, number>;
+  availability: Record<string, number>;
+};
+
+const emptyFacetCounts: FacetCounts = {
+  subjects: {},
+  grades: {},
+  localities: {},
+  boards: {},
+  availability: {},
+};
+
 export default function BrowsePage() {
   const searchParams = useSearchParams();
   const router = useRouter();
@@ -40,6 +56,8 @@ export default function BrowsePage() {
   const [isLoadingMore, setIsLoadingMore] = useState(false);
   const [remoteTeachers, setRemoteTeachers] = useState<TeacherRecord[] | null>(null);
   const [remoteTotal, setRemoteTotal] = useState(0);
+  const [remoteFacetCounts, setRemoteFacetCounts] = useState<FacetCounts>(emptyFacetCounts);
+  const [mobileFiltersOpen, setMobileFiltersOpen] = useState(false);
 
   useEffect(() => {
     setMounted(true);
@@ -100,6 +118,7 @@ export default function BrowsePage() {
         const payload = (await response.json()) as {
           teachers?: TeacherRecord[];
           total?: number;
+          facets?: FacetCounts;
           offline?: boolean;
         };
 
@@ -128,6 +147,9 @@ export default function BrowsePage() {
         }
 
         setRemoteTotal(payload.total ?? 0);
+        if (payload.facets) {
+          setRemoteFacetCounts(payload.facets);
+        }
         setCatalogLoaded(true);
         setIsLoadingMore(false);
       } catch (error) {
@@ -273,6 +295,9 @@ export default function BrowsePage() {
         </div>
 
         <div className="flex flex-wrap items-center gap-3 border-b border-[var(--border)] bg-white px-6 py-5 lg:px-8">
+          <button type="button" className="btn-secondary px-4 py-2 text-sm lg:hidden" onClick={() => setMobileFiltersOpen(true)}>
+            Filters
+          </button>
           {categoryChips.map((item) => (
             <button key={item} type="button" onClick={() => applyCategory(item)} className={`filter-pill ${subject === item || (item === "All" && !subject) ? "active" : ""}`}>
               {item}
@@ -282,7 +307,7 @@ export default function BrowsePage() {
         </div>
 
         <div className="grid min-h-[600px] lg:grid-cols-[280px_1fr]">
-          <aside className="border-r border-[var(--border)] bg-white p-8">
+          <aside className="hidden border-r border-[var(--border)] bg-white p-8 lg:block">
             <div className="mb-7">
               <p className="mb-4 font-mono text-[10px] uppercase tracking-[0.14em] text-[var(--muted)]">Search</p>
               <input className="field" value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Tutors, locality..." />
@@ -294,7 +319,7 @@ export default function BrowsePage() {
                 {subjectOptions.map((value) => (
                   <button key={value} type="button" onClick={() => setSubject(subject === value ? "" : value)} className={`filter-option ${subject === value ? "selected" : ""}`}>
                     <span>{value}</span>
-                    <span className="filter-count">{counts.subjectMap.get(value) ?? 0}</span>
+                    <span className="filter-count">{remoteFacetCounts.subjects[value] ?? counts.subjectMap.get(value) ?? 0}</span>
                   </button>
                 ))}
               </div>
@@ -306,7 +331,7 @@ export default function BrowsePage() {
                 {gradeOptions.map((value) => (
                   <button key={value} type="button" onClick={() => setGrade(grade === value ? "" : value)} className={`filter-option ${grade === value ? "selected" : ""}`}>
                     <span>{value}</span>
-                    <span className="filter-count">{counts.gradeMap.get(value) ?? 0}</span>
+                    <span className="filter-count">{remoteFacetCounts.grades[value] ?? counts.gradeMap.get(value) ?? 0}</span>
                   </button>
                 ))}
               </div>
@@ -318,7 +343,7 @@ export default function BrowsePage() {
                 {localityOptions.map((value) => (
                   <button key={value} type="button" onClick={() => setLocality(locality === value ? "" : value)} className={`filter-option ${locality === value ? "selected" : ""}`}>
                     <span>{value}</span>
-                    <span className="filter-count">{counts.localityMap.get(value) ?? 0}</span>
+                    <span className="filter-count">{remoteFacetCounts.localities[value] ?? counts.localityMap.get(value) ?? 0}</span>
                   </button>
                 ))}
               </div>
@@ -330,7 +355,7 @@ export default function BrowsePage() {
                 {boardOptions.map((value) => (
                   <button key={value} type="button" onClick={() => setBoard(board === value ? "" : value)} className={`filter-option ${board === value ? "selected" : ""}`}>
                     <span>{value}</span>
-                    <span className="filter-count">{counts.boardMap.get(value) ?? 0}</span>
+                    <span className="filter-count">{remoteFacetCounts.boards[value] ?? counts.boardMap.get(value) ?? 0}</span>
                   </button>
                 ))}
               </div>
@@ -342,7 +367,7 @@ export default function BrowsePage() {
                 {availabilityOptions.map((value) => (
                   <button key={value} type="button" onClick={() => setAvailability(availability === value ? "" : value)} className={`filter-option ${availability === value ? "selected" : ""}`}>
                     <span>{value}</span>
-                    <span className="filter-count">{counts.availabilityMap.get(value) ?? 0}</span>
+                    <span className="filter-count">{remoteFacetCounts.availability[value] ?? counts.availabilityMap.get(value) ?? 0}</span>
                   </button>
                 ))}
               </div>
@@ -372,6 +397,90 @@ export default function BrowsePage() {
             )}
           </section>
         </div>
+
+        {mobileFiltersOpen ? (
+          <div className="fixed inset-0 z-50 bg-black/45 lg:hidden" onClick={() => setMobileFiltersOpen(false)}>
+            <aside className="h-full w-[88%] max-w-[360px] overflow-y-auto bg-white p-6" onClick={(event) => event.stopPropagation()}>
+              <div className="mb-4 flex items-center justify-between">
+                <p className="font-semibold text-[var(--foreground)]">Filters</p>
+                <button type="button" className="btn-secondary px-3 py-1 text-sm" onClick={() => setMobileFiltersOpen(false)}>Close</button>
+              </div>
+
+              <div className="mb-7">
+                <p className="mb-4 font-mono text-[10px] uppercase tracking-[0.14em] text-[var(--muted)]">Search</p>
+                <input className="field" value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Tutors, locality..." />
+              </div>
+
+              <div className="mb-7">
+                <p className="mb-4 font-mono text-[10px] uppercase tracking-[0.14em] text-[var(--muted)]">Subject</p>
+                <div className="flex flex-col gap-2">
+                  {subjectOptions.map((value) => (
+                    <button key={`m-sub-${value}`} type="button" onClick={() => setSubject(subject === value ? "" : value)} className={`filter-option ${subject === value ? "selected" : ""}`}>
+                      <span>{value}</span>
+                      <span className="filter-count">{remoteFacetCounts.subjects[value] ?? counts.subjectMap.get(value) ?? 0}</span>
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              <div className="mb-7">
+                <p className="mb-4 font-mono text-[10px] uppercase tracking-[0.14em] text-[var(--muted)]">Grade</p>
+                <div className="flex flex-col gap-2">
+                  {gradeOptions.map((value) => (
+                    <button key={`m-grade-${value}`} type="button" onClick={() => setGrade(grade === value ? "" : value)} className={`filter-option ${grade === value ? "selected" : ""}`}>
+                      <span>{value}</span>
+                      <span className="filter-count">{remoteFacetCounts.grades[value] ?? counts.gradeMap.get(value) ?? 0}</span>
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              <div className="mb-7">
+                <p className="mb-4 font-mono text-[10px] uppercase tracking-[0.14em] text-[var(--muted)]">Locality</p>
+                <div className="flex flex-col gap-2">
+                  {localityOptions.map((value) => (
+                    <button key={`m-locality-${value}`} type="button" onClick={() => setLocality(locality === value ? "" : value)} className={`filter-option ${locality === value ? "selected" : ""}`}>
+                      <span>{value}</span>
+                      <span className="filter-count">{remoteFacetCounts.localities[value] ?? counts.localityMap.get(value) ?? 0}</span>
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              <div className="mb-7">
+                <p className="mb-4 font-mono text-[10px] uppercase tracking-[0.14em] text-[var(--muted)]">Board</p>
+                <div className="flex flex-col gap-2">
+                  {boardOptions.map((value) => (
+                    <button key={`m-board-${value}`} type="button" onClick={() => setBoard(board === value ? "" : value)} className={`filter-option ${board === value ? "selected" : ""}`}>
+                      <span>{value}</span>
+                      <span className="filter-count">{remoteFacetCounts.boards[value] ?? counts.boardMap.get(value) ?? 0}</span>
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              <div className="mb-7">
+                <p className="mb-4 font-mono text-[10px] uppercase tracking-[0.14em] text-[var(--muted)]">Availability</p>
+                <div className="flex flex-col gap-2">
+                  {availabilityOptions.map((value) => (
+                    <button key={`m-availability-${value}`} type="button" onClick={() => setAvailability(availability === value ? "" : value)} className={`filter-option ${availability === value ? "selected" : ""}`}>
+                      <span>{value}</span>
+                      <span className="filter-count">{remoteFacetCounts.availability[value] ?? counts.availabilityMap.get(value) ?? 0}</span>
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              <div>
+                <p className="mb-3 font-mono text-[10px] uppercase tracking-[0.14em] text-[var(--muted)]">Price range</p>
+                <label className="mb-2 block text-sm text-[var(--muted)]">Max: ₹{priceMax}</label>
+                <input className="w-full accent-[var(--saffron)]" type="range" min="0" max="5000" step="100" value={priceMax} onChange={(event) => setPriceMax(Number(event.target.value))} />
+              </div>
+
+              <button type="button" onClick={resetFilters} className="btn-secondary mt-6 w-full px-4 py-3 text-sm">Clear all filters</button>
+            </aside>
+          </div>
+        ) : null}
       </section>
 
       {teachers.length && hasMore ? (
