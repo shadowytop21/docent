@@ -27,6 +27,7 @@ export default function BrowsePage() {
   const pathname = usePathname();
   const { pushToast } = useToast();
   const [query, setQuery] = useState(searchParams.get("q") ?? searchParams.get("subject") ?? "");
+  const [debouncedQuery, setDebouncedQuery] = useState(searchParams.get("q") ?? searchParams.get("subject") ?? "");
   const [subject, setSubject] = useState(searchParams.get("subject") ?? "");
   const [grade, setGrade] = useState(searchParams.get("grade") ?? "");
   const [locality, setLocality] = useState(searchParams.get("locality") ?? "");
@@ -46,10 +47,21 @@ export default function BrowsePage() {
 
   useEffect(() => {
     setCurrentPage(1);
-  }, [query, subject, grade, locality, board, availability, priceMax]);
+  }, [debouncedQuery, subject, grade, locality, board, availability, priceMax]);
+
+  useEffect(() => {
+    const timer = window.setTimeout(() => {
+      setDebouncedQuery(query);
+    }, 250);
+
+    return () => {
+      window.clearTimeout(timer);
+    };
+  }, [query]);
 
   useEffect(() => {
     let active = true;
+    const controller = new AbortController();
 
     async function loadRemoteCatalog() {
       if (currentPage === 1) {
@@ -61,7 +73,7 @@ export default function BrowsePage() {
       const params = new URLSearchParams();
       params.set("page", String(currentPage));
       params.set("limit", String(PAGE_SIZE));
-      if (query) params.set("q", query);
+      if (debouncedQuery) params.set("q", debouncedQuery);
       if (subject) params.set("subject", subject);
       if (grade) params.set("grade", grade);
       if (locality) params.set("locality", locality);
@@ -69,62 +81,76 @@ export default function BrowsePage() {
       if (availability) params.set("availability", availability);
       if (priceMax < 5000) params.set("priceMax", String(priceMax));
 
-      const response = await fetch(`/api/browse?${params.toString()}`, { cache: "no-store" });
-      if (!active) {
-        return;
-      }
-
-      if (!response.ok) {
-        if (currentPage === 1) {
-          setRemoteTeachers(null);
-          setRemoteTotal(0);
+      try {
+        const response = await fetch(`/api/browse?${params.toString()}`, { signal: controller.signal });
+        if (!active) {
+          return;
         }
-        setCatalogLoaded(true);
-        setIsLoadingMore(false);
-        return;
-      }
 
-      const payload = (await response.json()) as {
-        teachers?: TeacherRecord[];
-        total?: number;
-        offline?: boolean;
-      };
-
-      if (payload.offline) {
-        if (currentPage === 1) {
-          setRemoteTeachers(null);
-          setRemoteTotal(0);
-        }
-        setCatalogLoaded(true);
-        setIsLoadingMore(false);
-        return;
-      }
-
-      const incoming = payload.teachers ?? [];
-      if (currentPage === 1) {
-        setRemoteTeachers(incoming);
-      } else {
-        setRemoteTeachers((existing) => {
-          const merged = [...(existing ?? []), ...incoming];
-          const uniqueById = new Map<string, TeacherRecord>();
-          for (const teacher of merged) {
-            uniqueById.set(teacher.id, teacher);
+        if (!response.ok) {
+          if (currentPage === 1) {
+            setRemoteTeachers(null);
+            setRemoteTotal(0);
           }
-          return Array.from(uniqueById.values());
-        });
-      }
+          setCatalogLoaded(true);
+          setIsLoadingMore(false);
+          return;
+        }
 
-      setRemoteTotal(payload.total ?? 0);
-      setCatalogLoaded(true);
-      setIsLoadingMore(false);
+        const payload = (await response.json()) as {
+          teachers?: TeacherRecord[];
+          total?: number;
+          offline?: boolean;
+        };
+
+        if (payload.offline) {
+          if (currentPage === 1) {
+            setRemoteTeachers(null);
+            setRemoteTotal(0);
+          }
+          setCatalogLoaded(true);
+          setIsLoadingMore(false);
+          return;
+        }
+
+        const incoming = payload.teachers ?? [];
+        if (currentPage === 1) {
+          setRemoteTeachers(incoming);
+        } else {
+          setRemoteTeachers((existing) => {
+            const merged = [...(existing ?? []), ...incoming];
+            const uniqueById = new Map<string, TeacherRecord>();
+            for (const teacher of merged) {
+              uniqueById.set(teacher.id, teacher);
+            }
+            return Array.from(uniqueById.values());
+          });
+        }
+
+        setRemoteTotal(payload.total ?? 0);
+        setCatalogLoaded(true);
+        setIsLoadingMore(false);
+      } catch (error) {
+        if ((error as Error).name === "AbortError") {
+          return;
+        }
+
+        if (currentPage === 1) {
+          setRemoteTeachers(null);
+          setRemoteTotal(0);
+        }
+        setCatalogLoaded(true);
+        setIsLoadingMore(false);
+      }
     }
 
     loadRemoteCatalog();
 
     return () => {
       active = false;
+      controller.abort();
     };
-  }, [availability, board, currentPage, grade, locality, priceMax, query, subject]);
+  }, [availability, board, currentPage, debouncedQuery, grade, locality, priceMax, subject]);
 
   useEffect(() => {
     if (!("IntersectionObserver" in window)) {
@@ -157,7 +183,7 @@ export default function BrowsePage() {
 
   useEffect(() => {
     const current = new URLSearchParams(searchParams.toString());
-    if (query) current.set("q", query); else current.delete("q");
+    if (debouncedQuery) current.set("q", debouncedQuery); else current.delete("q");
     if (subject) current.set("subject", subject); else current.delete("subject");
     if (grade) current.set("grade", grade); else current.delete("grade");
     if (locality) current.set("locality", locality); else current.delete("locality");
@@ -167,7 +193,7 @@ export default function BrowsePage() {
     const next = current.toString();
     const path = next ? `${pathname}?${next}` : pathname;
     router.replace(path, { scroll: false });
-  }, [availability, board, grade, locality, pathname, priceMax, query, router, searchParams, subject]);
+  }, [availability, board, debouncedQuery, grade, locality, pathname, priceMax, router, searchParams, subject]);
 
   const fallbackSnapshot = mounted ? loadAppState() : { teachers: [], reviews: [] as ReviewRecord[] };
   const localTeachers = useMemo(

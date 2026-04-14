@@ -4,6 +4,7 @@ import { getSupabaseServiceClient } from "@/lib/supabase-server";
 export async function GET(request: Request) {
   try {
     const { searchParams } = new URL(request.url);
+    const includeReviews = searchParams.get("includeReviews") === "1";
     const page = Math.max(1, Number(searchParams.get("page") ?? "1"));
     const limit = Math.min(24, Math.max(1, Number(searchParams.get("limit") ?? "12")));
     const start = (page - 1) * limit;
@@ -60,27 +61,35 @@ export async function GET(request: Request) {
 
     const [{ data: profileRows }, { data: reviewRows }] = await Promise.all([
       userIds.length ? adminSupabase.from("profiles").select("id,name").in("id", userIds) : Promise.resolve({ data: [] }),
-      teacherIds.length ? adminSupabase.from("reviews").select("id,teacher_id,parent_id,rating,comment,created_at").in("teacher_id", teacherIds) : Promise.resolve({ data: [] }),
+      teacherIds.length
+        ? includeReviews
+          ? adminSupabase.from("reviews").select("id,teacher_id,parent_id,rating,comment,created_at").in("teacher_id", teacherIds)
+          : adminSupabase.from("reviews").select("teacher_id,rating").in("teacher_id", teacherIds)
+        : Promise.resolve({ data: [] }),
     ]);
 
     const namesByUserId = new Map<string, string>(
       ((profileRows ?? []) as Array<{ id: string; name: string }>).map((row) => [row.id, row.name]),
     );
 
-    const normalizedReviews = ((reviewRows ?? []) as any[]).map((row) => ({
-      id: row.id,
-      teacher_id: row.teacher_id,
-      parent_id: row.parent_id,
-      parent_name: "Parent",
-      rating: row.rating,
-      comment: row.comment,
-      created_at: row.created_at,
-    }));
+    const normalizedReviews = includeReviews
+      ? ((reviewRows ?? []) as any[]).map((row) => ({
+        id: row.id,
+        teacher_id: row.teacher_id,
+        parent_id: row.parent_id,
+        parent_name: "Parent",
+        rating: row.rating,
+        comment: row.comment,
+        created_at: row.created_at,
+      }))
+      : [];
+
+    const ratingRows = (reviewRows ?? []) as Array<{ teacher_id: string; rating: number }>;
 
     const ratingsByTeacherId = new Map<string, { total: number; count: number }>();
-    for (const review of normalizedReviews) {
+    for (const review of ratingRows) {
       const aggregate = ratingsByTeacherId.get(review.teacher_id) ?? { total: 0, count: 0 };
-      aggregate.total += review.rating;
+      aggregate.total += Number(review.rating ?? 0);
       aggregate.count += 1;
       ratingsByTeacherId.set(review.teacher_id, aggregate);
     }

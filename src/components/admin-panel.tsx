@@ -200,7 +200,7 @@ export function AdminPanel() {
             <p className="admin-table-title mb-4">Homepage Featured Panel Editor</p>
             <div className="grid gap-6 lg:grid-cols-2">
               {showcaseConfig.cards.map((card, index) => (
-                <div key={`${card.name}-${index}`} className="rounded-xl border border-[var(--border)] bg-[var(--ivory)] p-4">
+                <div key={`card-${index}`} className="rounded-xl border border-[var(--border)] bg-[var(--ivory)] p-4">
                   <p className="mb-3 text-sm font-semibold text-[var(--navy)]">Card {index + 1}</p>
                   <div className="grid gap-2">
                     <input className="form-input" value={card.initials} onChange={(e) => updateShowcaseCard(index, "initials", e.target.value)} placeholder="Initials" />
@@ -218,7 +218,7 @@ export function AdminPanel() {
 
             <div className="mt-5 grid gap-3 md:grid-cols-3">
               {showcaseConfig.stats.map((stat, index) => (
-                <div key={`${stat.label}-${index}`} className="rounded-xl border border-[var(--border)] bg-[var(--ivory)] p-4">
+                <div key={`stat-${index}`} className="rounded-xl border border-[var(--border)] bg-[var(--ivory)] p-4">
                   <input className="form-input mb-2" value={stat.label} onChange={(e) => updateShowcaseStat(index, "label", e.target.value)} placeholder="Label" />
                   <input className="form-input" value={stat.value} onChange={(e) => updateShowcaseStat(index, "value", e.target.value)} placeholder="Value" />
                 </div>

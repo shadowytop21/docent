@@ -31,7 +31,7 @@ export default function TeacherProfilePage() {
 
   const loadRemoteCatalog = useCallback(async () => {
     setCatalogLoaded(false);
-    const response = await fetch("/api/browse", { cache: "no-store" });
+    const response = await fetch("/api/browse?includeReviews=1", { cache: "no-store" });
     if (!response.ok) {
       setCatalogLoaded(true);
       return;
