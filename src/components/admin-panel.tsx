@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import { useToast } from "@/components/toast-provider";
 import type { AppSnapshot } from "@/lib/mock-db";
@@ -24,6 +24,9 @@ export function AdminPanel() {
   });
   const [isRemoteData, setIsRemoteData] = useState(false);
   const [showcaseConfig, setShowcaseConfig] = useState<HomepageShowcaseConfig>(defaultHomepageShowcaseConfig);
+  const [teacherSearch, setTeacherSearch] = useState("");
+  const [teacherStatusFilter, setTeacherStatusFilter] = useState<"all" | "pending" | "verified" | "rejected">("all");
+  const [accountRoleFilter, setAccountRoleFilter] = useState<"all" | "teacher" | "parent">("all");
 
   const loadModerationSnapshot = useCallback(async () => {
     const response = await fetch("/api/admin/moderation", { cache: "no-store" });
@@ -104,6 +107,72 @@ export function AdminPanel() {
     pushToast({ tone: "warning", title: "Teacher rejected" });
   }
 
+  async function toggleFoundingMember(teacherId: string, nextValue: boolean) {
+    if (!isRemoteData) {
+      pushToast({ tone: "warning", title: "Founding member toggle needs server mode." });
+      return;
+    }
+
+    const response = await fetch(`/api/admin/teachers/${teacherId}`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ is_founding_member: nextValue }),
+    });
+
+    if (!response.ok) {
+      const payload = (await response.json().catch(() => ({}))) as { message?: string };
+      pushToast({ tone: "error", title: payload.message ?? "Unable to update founding member status." });
+      return;
+    }
+
+    await loadModerationSnapshot();
+    pushToast({ tone: "success", title: nextValue ? "Marked as founding member" : "Removed founding member badge" });
+  }
+
+  async function deleteReview(reviewId: string) {
+    if (!isRemoteData) {
+      pushToast({ tone: "warning", title: "Review deletion needs server mode." });
+      return;
+    }
+
+    const confirmed = window.confirm("Delete this review permanently?");
+    if (!confirmed) {
+      return;
+    }
+
+    const response = await fetch(`/api/admin/reviews/${reviewId}`, { method: "DELETE" });
+    if (!response.ok) {
+      const payload = (await response.json().catch(() => ({}))) as { message?: string };
+      pushToast({ tone: "error", title: payload.message ?? "Unable to delete review." });
+      return;
+    }
+
+    await loadModerationSnapshot();
+    pushToast({ tone: "success", title: "Review deleted" });
+  }
+
+  async function deleteAccount(profileId: string, name: string) {
+    if (!isRemoteData) {
+      pushToast({ tone: "warning", title: "Account deletion needs server mode." });
+      return;
+    }
+
+    const confirmed = window.confirm(`Delete account for ${name}? This action is permanent.`);
+    if (!confirmed) {
+      return;
+    }
+
+    const response = await fetch(`/api/admin/accounts/${profileId}`, { method: "DELETE" });
+    if (!response.ok) {
+      const payload = (await response.json().catch(() => ({}))) as { message?: string };
+      pushToast({ tone: "error", title: payload.message ?? "Unable to delete account." });
+      return;
+    }
+
+    await loadModerationSnapshot();
+    pushToast({ tone: "warning", title: "Account deleted" });
+  }
+
   const stats = {
     totalTeachers: snapshot.teachers.length,
     pendingTeachers: snapshot.teachers.filter((teacher) => teacher.status === "pending").length,
@@ -112,6 +181,33 @@ export function AdminPanel() {
   };
 
   const pendingTeachers = snapshot.teachers.filter((teacher) => teacher.status === "pending");
+
+  const visibleTeachers = useMemo(() => {
+    const normalizedQuery = teacherSearch.trim().toLowerCase();
+    return snapshot.teachers.filter((teacher) => {
+      const statusMatch = teacherStatusFilter === "all" ? true : teacher.status === teacherStatusFilter;
+      if (!statusMatch) {
+        return false;
+      }
+
+      if (!normalizedQuery) {
+        return true;
+      }
+
+      const searchable = [teacher.name, teacher.locality, teacher.bio, ...teacher.subjects].join(" ").toLowerCase();
+      return searchable.includes(normalizedQuery);
+    });
+  }, [snapshot.teachers, teacherSearch, teacherStatusFilter]);
+
+  const visibleProfiles = useMemo(() => {
+    return snapshot.profiles.filter((profile) => (accountRoleFilter === "all" ? true : profile.role === accountRoleFilter));
+  }, [snapshot.profiles, accountRoleFilter]);
+
+  const recentReviews = useMemo(() => {
+    return [...snapshot.reviews]
+      .sort((a, b) => +new Date(b.created_at) - +new Date(a.created_at))
+      .slice(0, 10);
+  }, [snapshot.reviews]);
 
   function updateShowcaseCard(index: number, key: "initials" | "name" | "locality" | "price" | "rating" | "tags", value: string) {
     setShowcaseConfig((prev) => {
@@ -168,6 +264,22 @@ export function AdminPanel() {
         </div>
 
         <div className="admin-table-section">
+          <div className="mb-4 grid gap-3 rounded-2xl border border-[var(--border)] bg-white p-4 lg:grid-cols-[1.6fr_1fr_1fr]">
+            <input
+              className="form-input"
+              value={teacherSearch}
+              onChange={(event) => setTeacherSearch(event.target.value)}
+              placeholder="Search teachers by name, subject, or locality"
+            />
+            <select className="form-input" value={teacherStatusFilter} onChange={(event) => setTeacherStatusFilter(event.target.value as typeof teacherStatusFilter)}>
+              <option value="all">All statuses</option>
+              <option value="pending">Pending</option>
+              <option value="verified">Verified</option>
+              <option value="rejected">Rejected</option>
+            </select>
+            <button type="button" className="btn-secondary px-4 py-2 text-sm" onClick={loadModerationSnapshot}>Refresh Admin Data</button>
+          </div>
+
           <div className="admin-table-title">Pending Verification Requests</div>
           <div className="admin-table">
             <div className="admin-table-row admin-table-head">
@@ -178,7 +290,7 @@ export function AdminPanel() {
               <span>Actions</span>
             </div>
 
-            {(pendingTeachers.length ? pendingTeachers : snapshot.teachers.slice(0, 3)).map((teacher) => (
+            {(teacherStatusFilter === "pending" ? pendingTeachers : visibleTeachers).slice(0, 15).map((teacher) => (
               <div key={teacher.id} className="admin-table-row">
                 <div>
                   <div className="admin-teacher-name">{teacher.name}</div>
@@ -190,11 +302,73 @@ export function AdminPanel() {
                 <div className="admin-actions">
                   <button type="button" onClick={() => approveTeacher(teacher.id)} className="btn-approve">Verify</button>
                   <button type="button" onClick={() => rejectTeacher(teacher.id)} className="btn-reject">Reject</button>
+                  <button type="button" onClick={() => toggleFoundingMember(teacher.id, !teacher.is_founding_member)} className="btn-secondary px-3 py-1 text-xs">
+                    {teacher.is_founding_member ? "Remove Founder" : "Set Founder"}
+                  </button>
                 </div>
               </div>
             ))}
           </div>
           <p className="mt-4 text-xs text-[var(--muted)]">Data source: {isRemoteData ? "Supabase" : "Local browser storage"}</p>
+
+          <div className="mt-8 rounded-2xl border border-[var(--border)] bg-white p-5">
+            <div className="mb-4 flex flex-wrap items-center gap-3">
+              <p className="admin-table-title mb-0">Account Management</p>
+              <select className="form-input max-w-[220px]" value={accountRoleFilter} onChange={(event) => setAccountRoleFilter(event.target.value as typeof accountRoleFilter)}>
+                <option value="all">All accounts</option>
+                <option value="teacher">Teacher accounts</option>
+                <option value="parent">Parent accounts</option>
+              </select>
+            </div>
+
+            <div className="admin-table">
+              <div className="admin-table-row admin-table-head">
+                <span>Name</span>
+                <span>Role</span>
+                <span>Phone</span>
+                <span>Joined</span>
+                <span>Actions</span>
+              </div>
+              {visibleProfiles.slice(0, 20).map((profile) => (
+                <div key={profile.id} className="admin-table-row">
+                  <div>
+                    <div className="admin-teacher-name">{profile.name}</div>
+                    <div className="admin-teacher-sub">{profile.id.slice(0, 8)}...</div>
+                  </div>
+                  <div className="text-[13px] text-[var(--navy)] capitalize">{profile.role}</div>
+                  <div className="text-[13px] text-[var(--navy)]">{profile.phone || "-"}</div>
+                  <div className="text-[13px] text-[var(--navy)]">{new Date(profile.created_at).toLocaleDateString()}</div>
+                  <div className="admin-actions">
+                    <button type="button" onClick={() => deleteAccount(profile.id, profile.name)} className="btn-reject">Delete Account</button>
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+
+          <div className="mt-8 rounded-2xl border border-[var(--border)] bg-white p-5">
+            <p className="admin-table-title mb-4">Recent Review Moderation</p>
+            <div className="admin-table">
+              <div className="admin-table-row admin-table-head">
+                <span>Reviewer</span>
+                <span>Teacher ID</span>
+                <span>Rating</span>
+                <span>Comment</span>
+                <span>Actions</span>
+              </div>
+              {recentReviews.map((review) => (
+                <div key={review.id} className="admin-table-row">
+                  <div className="text-[13px] text-[var(--navy)]">{review.parent_name}</div>
+                  <div className="text-[13px] text-[var(--navy)]">{review.teacher_id.slice(0, 8)}...</div>
+                  <div className="text-[13px] text-[var(--navy)]">{review.rating}/5</div>
+                  <div className="text-[13px] text-[var(--navy)]">{review.comment.slice(0, 60)}{review.comment.length > 60 ? "..." : ""}</div>
+                  <div className="admin-actions">
+                    <button type="button" onClick={() => deleteReview(review.id)} className="btn-reject">Delete Review</button>
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
 
           <div className="mt-8 rounded-2xl border border-[var(--border)] bg-white p-5">
             <p className="admin-table-title mb-4">Homepage Featured Panel Editor</p>
