@@ -16,6 +16,7 @@ import {
   type TeacherRecord,
 } from "@/lib/data";
 import { loadAppState } from "@/lib/mock-db";
+import { upsertTeachersToCache } from "@/lib/teacher-cache";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 
 const categoryChips = ["All", ...teacherSubjects];
@@ -58,9 +59,11 @@ export default function BrowsePage() {
   const [remoteTotal, setRemoteTotal] = useState(0);
   const [remoteFacetCounts, setRemoteFacetCounts] = useState<FacetCounts>(emptyFacetCounts);
   const [mobileFiltersOpen, setMobileFiltersOpen] = useState(false);
+  const [localSnapshot, setLocalSnapshot] = useState(() => ({ teachers: [] as TeacherRecord[], reviews: [] as ReviewRecord[] }));
 
   useEffect(() => {
     setMounted(true);
+    setLocalSnapshot(loadAppState());
   }, []);
 
   useEffect(() => {
@@ -91,6 +94,7 @@ export default function BrowsePage() {
       const params = new URLSearchParams();
       params.set("page", String(currentPage));
       params.set("limit", String(PAGE_SIZE));
+      params.set("includeFacets", currentPage === 1 ? "1" : "0");
       if (debouncedQuery) params.set("q", debouncedQuery);
       if (subject) params.set("subject", subject);
       if (grade) params.set("grade", grade);
@@ -133,6 +137,7 @@ export default function BrowsePage() {
         }
 
         const incoming = payload.teachers ?? [];
+        upsertTeachersToCache(incoming);
         if (currentPage === 1) {
           setRemoteTeachers(incoming);
         } else {
@@ -217,13 +222,13 @@ export default function BrowsePage() {
     router.replace(path, { scroll: false });
   }, [availability, board, debouncedQuery, grade, locality, pathname, priceMax, router, searchParams, subject]);
 
-  const fallbackSnapshot = mounted ? loadAppState() : { teachers: [], reviews: [] as ReviewRecord[] };
+  const fallbackSnapshot = mounted ? localSnapshot : { teachers: [], reviews: [] as ReviewRecord[] };
   const localTeachers = useMemo(
     () =>
       computeFilteredTeachers(
         fallbackSnapshot.teachers ?? [],
         {
-          query,
+          query: debouncedQuery,
           subject: subject || undefined,
           grade: grade || undefined,
           locality: locality || undefined,
@@ -234,7 +239,7 @@ export default function BrowsePage() {
         },
         fallbackSnapshot.reviews ?? [],
       ),
-    [availability, board, fallbackSnapshot.reviews, fallbackSnapshot.teachers, grade, locality, priceMax, query, subject],
+    [availability, board, debouncedQuery, fallbackSnapshot.reviews, fallbackSnapshot.teachers, grade, locality, priceMax, subject],
   );
 
   const localVisible = localTeachers.slice(0, currentPage * PAGE_SIZE);
@@ -482,6 +487,12 @@ export default function BrowsePage() {
           </div>
         ) : null}
       </section>
+
+      {!catalogLoaded && teachers.length === 0 ? (
+        <div className="mt-8 rounded-[1rem] border border-[var(--border)] bg-white px-6 py-4 text-sm text-[var(--muted)] shadow-[0_8px_30px_rgba(26,39,68,0.05)]">
+          Loading live results in the background...
+        </div>
+      ) : null}
 
       {teachers.length && hasMore ? (
         <div className="mt-8 flex justify-center">

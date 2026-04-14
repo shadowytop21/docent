@@ -1,6 +1,63 @@
 import { NextResponse } from "next/server";
 import { getSupabaseServiceClient } from "@/lib/supabase-server";
 
+type FacetCounts = {
+  subjects: Record<string, number>;
+  grades: Record<string, number>;
+  localities: Record<string, number>;
+  boards: Record<string, number>;
+  availability: Record<string, number>;
+};
+
+const FACET_CACHE_TTL_MS = 60_000;
+let cachedFacetCounts: FacetCounts | null = null;
+let cachedFacetCountsAt = 0;
+
+async function getFacetCounts(adminSupabase: any) {
+  if (cachedFacetCounts && Date.now() - cachedFacetCountsAt < FACET_CACHE_TTL_MS) {
+    return cachedFacetCounts;
+  }
+
+  const facets: FacetCounts = {
+    subjects: {},
+    grades: {},
+    localities: {},
+    boards: {},
+    availability: {},
+  };
+
+  const { data: facetRows } = await adminSupabase
+    .from("teacher_profiles")
+    .select("subjects,grades,boards,locality,availability")
+    .neq("status", "rejected");
+
+  for (const row of (facetRows ?? []) as any[]) {
+    for (const value of (row.subjects ?? []) as string[]) {
+      facets.subjects[value] = (facets.subjects[value] ?? 0) + 1;
+    }
+
+    for (const value of (row.grades ?? []) as string[]) {
+      facets.grades[value] = (facets.grades[value] ?? 0) + 1;
+    }
+
+    for (const value of (row.boards ?? []) as string[]) {
+      facets.boards[value] = (facets.boards[value] ?? 0) + 1;
+    }
+
+    for (const value of (row.availability ?? []) as string[]) {
+      facets.availability[value] = (facets.availability[value] ?? 0) + 1;
+    }
+
+    if (row.locality) {
+      facets.localities[row.locality] = (facets.localities[row.locality] ?? 0) + 1;
+    }
+  }
+
+  cachedFacetCounts = facets;
+  cachedFacetCountsAt = Date.now();
+  return facets;
+}
+
 export async function GET(request: Request) {
   try {
     const { searchParams } = new URL(request.url);
@@ -138,44 +195,9 @@ export async function GET(request: Request) {
         return searchable.includes(query);
       });
 
-    const facets = {
-      subjects: {} as Record<string, number>,
-      grades: {} as Record<string, number>,
-      localities: {} as Record<string, number>,
-      boards: {} as Record<string, number>,
-      availability: {} as Record<string, number>,
-    };
+    const facets = includeFacets ? await getFacetCounts(adminSupabase) : undefined;
 
-    if (includeFacets) {
-      const { data: facetRows } = await adminSupabase
-        .from("teacher_profiles")
-        .select("subjects,grades,boards,locality,availability")
-        .neq("status", "rejected");
-
-      for (const row of (facetRows ?? []) as any[]) {
-        for (const value of (row.subjects ?? []) as string[]) {
-          facets.subjects[value] = (facets.subjects[value] ?? 0) + 1;
-        }
-
-        for (const value of (row.grades ?? []) as string[]) {
-          facets.grades[value] = (facets.grades[value] ?? 0) + 1;
-        }
-
-        for (const value of (row.boards ?? []) as string[]) {
-          facets.boards[value] = (facets.boards[value] ?? 0) + 1;
-        }
-
-        for (const value of (row.availability ?? []) as string[]) {
-          facets.availability[value] = (facets.availability[value] ?? 0) + 1;
-        }
-
-        if (row.locality) {
-          facets.localities[row.locality] = (facets.localities[row.locality] ?? 0) + 1;
-        }
-      }
-    }
-
-    const response = NextResponse.json({ teachers, reviews: normalizedReviews, total: count ?? 0, page, pageSize: limit, facets, offline: false });
+    const response = NextResponse.json({ teachers, reviews: normalizedReviews, total: count ?? 0, page, pageSize: limit, ...(facets ? { facets } : {}), offline: false });
     response.headers.set("Cache-Control", "s-maxage=60, stale-while-revalidate=300");
     return response;
   } catch {

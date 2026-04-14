@@ -14,6 +14,10 @@ function Badge({ children, tone = "neutral" }: { children: React.ReactNode; tone
 }
 
 function TeacherCardImpl({ teacher }: { teacher: TeacherProfile }) {
+  function prewarmTeacherProfile() {
+    void fetch(`/api/teacher/${teacher.id}`, { cache: "force-cache" });
+  }
+
   const initials = teacher.name
     .split(" ")
     .map((part) => part[0])
@@ -70,13 +74,15 @@ function TeacherCardImpl({ teacher }: { teacher: TeacherProfile }) {
         </div>
 
         <div className="text-right text-sm text-[var(--muted)] min-w-0">
-          <div className="font-semibold text-[var(--foreground)]">{teacher.experience_years}+ yrs</div>
+          <div className="font-semibold text-[var(--foreground)]">{teacher.experience_years}+ years</div>
           <div>{teacher.rating.toFixed(1)} rating</div>
         </div>
 
         <Link
           href={`/teacher/${teacher.id}`}
           className="card-btn inline-flex items-center justify-center text-sm"
+          onMouseEnter={prewarmTeacherProfile}
+          onFocus={prewarmTeacherProfile}
         >
           View Profile
         </Link>

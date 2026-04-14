@@ -4,8 +4,8 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useParams, useRouter } from "next/navigation";
 import { useToast } from "@/components/toast-provider";
 import { isTeacherVisiblePublicly, loadAppState, submitReview } from "@/lib/mock-db";
+import { getTeacherFromCache, upsertTeachersToCache } from "@/lib/teacher-cache";
 import { formatCurrency, formatDate, whatsappLink } from "@/lib/utils";
-import { TeacherCard } from "@/components/teacher-card";
 import type { ReviewRecord, TeacherRecord } from "@/lib/data";
 
 export default function TeacherProfilePage() {
@@ -23,29 +23,45 @@ export default function TeacherProfilePage() {
   const [refreshKey, setRefreshKey] = useState(0);
   const [remoteTeachers, setRemoteTeachers] = useState<TeacherRecord[] | null>(null);
   const [remoteReviews, setRemoteReviews] = useState<ReviewRecord[] | null>(null);
-  const [catalogLoaded, setCatalogLoaded] = useState(false);
+  const [isRemoteLoading, setIsRemoteLoading] = useState(true);
+  const [localSnapshot, setLocalSnapshot] = useState(() => loadAppState());
+  const [cachedTeacher, setCachedTeacher] = useState<TeacherRecord | null>(null);
 
   useEffect(() => {
     setMounted(true);
+    setCachedTeacher(getTeacherFromCache(params.id));
   }, []);
 
-  const loadRemoteCatalog = useCallback(async () => {
-    setCatalogLoaded(false);
-    const response = await fetch("/api/browse?includeReviews=1", { cache: "no-store" });
-    if (!response.ok) {
-      setCatalogLoaded(true);
-      return;
+  const loadRemoteCatalog = useCallback(async (signal?: AbortSignal) => {
+    try {
+      const response = await fetch(`/api/teacher/${params.id}`, { signal });
+      if (!response.ok) {
+        setIsRemoteLoading(false);
+        return;
+      }
+
+      const payload = (await response.json()) as { teacher?: TeacherRecord | null; reviews?: ReviewRecord[]; offline?: boolean };
+      if (payload.offline) {
+        setIsRemoteLoading(false);
+        return;
+      }
+
+      if (payload.teacher) {
+        upsertTeachersToCache([payload.teacher]);
+        setCachedTeacher(payload.teacher);
+      }
+
+      setRemoteTeachers(payload.teacher ? [payload.teacher] : []);
+      setRemoteReviews(payload.reviews ?? []);
+      setIsRemoteLoading(false);
+    } catch (error) {
+      if ((error as Error).name === "AbortError") {
+        return;
+      }
+
+      setIsRemoteLoading(false);
     }
-
-    const payload = (await response.json()) as { teachers?: TeacherRecord[]; reviews?: ReviewRecord[] };
-    setRemoteTeachers(payload.teachers ?? []);
-    setRemoteReviews(payload.reviews ?? []);
-    setCatalogLoaded(true);
-  }, []);
-
-  useEffect(() => {
-    loadRemoteCatalog();
-  }, [loadRemoteCatalog]);
+  }, [params.id]);
 
   useEffect(() => {
     const waButton = whatsappButtonRef.current;
@@ -64,12 +80,22 @@ export default function TeacherProfilePage() {
     };
   }, []);
 
-  const fallbackSnapshot = useMemo(() => loadAppState(), [mounted, rating, editingReview, refreshKey]);
+  useEffect(() => {
+    if (mounted) {
+      setLocalSnapshot(loadAppState());
+    }
+  }, [mounted, refreshKey]);
+
+  const fallbackSnapshot = useMemo(() => localSnapshot, [localSnapshot]);
   const mergedTeachers = useMemo(() => {
     const byId = new Map<string, TeacherRecord>();
 
     for (const item of remoteTeachers ?? []) {
       byId.set(item.id, item);
+    }
+
+    if (cachedTeacher && !byId.has(cachedTeacher.id)) {
+      byId.set(cachedTeacher.id, cachedTeacher);
     }
 
     for (const item of fallbackSnapshot.teachers) {
@@ -79,7 +105,7 @@ export default function TeacherProfilePage() {
     }
 
     return Array.from(byId.values());
-  }, [remoteTeachers, fallbackSnapshot.teachers]);
+  }, [cachedTeacher, remoteTeachers, fallbackSnapshot.teachers]);
 
   const mergedReviews = useMemo(() => {
     const byId = new Map<string, ReviewRecord>();
@@ -106,12 +132,24 @@ export default function TeacherProfilePage() {
   const teacher = snapshot.teachers.find((item) => item.id === params.id);
   const teacherReviews = snapshot.reviews.filter((item) => item.teacher_id === params.id);
   const session = snapshot.session;
+  const hasLocalTeacher = Boolean(cachedTeacher) || fallbackSnapshot.teachers.some((item) => item.id === params.id);
 
-  if (!mounted) {
-    return <div className="mx-auto max-w-2xl px-4 py-24 text-center text-[var(--muted)]">Loading profile...</div>;
-  }
+  useEffect(() => {
+    if (hasLocalTeacher) {
+      setIsRemoteLoading(false);
+      return;
+    }
 
-  if (!catalogLoaded) {
+    const controller = new AbortController();
+    loadRemoteCatalog(controller.signal);
+    return () => {
+      controller.abort();
+    };
+  }, [hasLocalTeacher, loadRemoteCatalog]);
+
+  const showLoading = !teacher && isRemoteLoading;
+
+  if (!mounted || showLoading) {
     return <div className="mx-auto max-w-2xl px-4 py-24 text-center text-[var(--muted)]">Loading profile...</div>;
   }
 
@@ -173,6 +211,7 @@ export default function TeacherProfilePage() {
     await loadRemoteCatalog();
     setEditingReview(false);
     setRefreshKey((value) => value + 1);
+    setLocalSnapshot(loadAppState());
     pushToast({ tone: "success", title: existingReview ? "Review updated" : "Review posted" });
   }
 
@@ -203,7 +242,17 @@ export default function TeacherProfilePage() {
         <div className="profile-main">
           <div className="profile-top">
             <div className="profile-avatar-wrap">
-              <div className="profile-avatar">{initials}</div>
+              <div className="profile-avatar">
+                {currentTeacher.photo_url ? (
+                  <img
+                    src={currentTeacher.photo_url}
+                    alt={currentTeacher.name}
+                    className="profile-avatar-image"
+                  />
+                ) : (
+                  <span>{initials}</span>
+                )}
+              </div>
               <div className="profile-online" />
             </div>
             <div className="profile-name-section">
@@ -211,12 +260,12 @@ export default function TeacherProfilePage() {
               <p className="profile-tagline">{currentTeacher.subjects.join(" & ")} Tutor · {currentTeacher.locality}</p>
               <div className="profile-badges">
                 <span className="pill badge-verified">Verified</span>
-                <span className="pill pill-inactive">{currentTeacher.experience_years} yrs experience</span>
+                <span className="pill pill-inactive">{currentTeacher.experience_years} years experience</span>
               </div>
               <div className="profile-stats-row">
                 <div className="pstat"><div className="pstat-num">{currentTeacher.rating.toFixed(1)}</div><div className="pstat-label">Rating</div></div>
                 <div className="pstat"><div className="pstat-num">{teacherReviews.length}</div><div className="pstat-label">Reviews</div></div>
-                <div className="pstat"><div className="pstat-num">{currentTeacher.experience_years} yrs</div><div className="pstat-label">Experience</div></div>
+                <div className="pstat"><div className="pstat-num">{currentTeacher.experience_years} years</div><div className="pstat-label">Experience</div></div>
               </div>
             </div>
           </div>
@@ -321,10 +370,10 @@ export default function TeacherProfilePage() {
             <button type="button" className="btn-save">Save Profile</button>
           </div>
 
-          <div className="sidebar-detail"><div className="sd-icon">Loc</div><div><div className="sd-label">Location</div><div className="sd-val">{currentTeacher.locality}</div></div></div>
-          <div className="sidebar-detail"><div className="sd-icon">Avl</div><div><div className="sd-label">Availability</div><div className="sd-val">{currentTeacher.availability.join(" & ")}</div></div></div>
-          <div className="sidebar-detail"><div className="sd-icon">Rsp</div><div><div className="sd-label">Response time</div><div className="sd-val">Usually within 1 hour</div></div></div>
-          <div className="sidebar-detail"><div className="sd-icon">Cnt</div><div><div className="sd-label">Parents contacted</div><div className="sd-val">{teacherReviews.length + 12} this month</div></div></div>
+          <div className="sidebar-detail"><div className="sd-icon sd-icon-location" aria-hidden="true" /><div><div className="sd-label">Location</div><div className="sd-val">{currentTeacher.locality}</div></div></div>
+          <div className="sidebar-detail"><div className="sd-icon sd-icon-availability" aria-hidden="true" /><div><div className="sd-label">Availability</div><div className="sd-val">{currentTeacher.availability.join(" & ")}</div></div></div>
+          <div className="sidebar-detail"><div className="sd-icon sd-icon-response" aria-hidden="true" /><div><div className="sd-label">Response time</div><div className="sd-val">Usually within 1 hour</div></div></div>
+          <div className="sidebar-detail"><div className="sd-icon sd-icon-contact" aria-hidden="true" /><div><div className="sd-label">Parents contacted</div><div className="sd-val">{teacherReviews.length + 12} this month</div></div></div>
         </div>
       </div>
 

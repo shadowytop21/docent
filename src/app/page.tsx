@@ -232,7 +232,7 @@ export default function HomePage() {
 
       <div className="page-section">
         <section className="cta-section">
-          <h2 className="cta-title">Your child&apos;s best<br />tutor is <em>already</em><br />in your mohalla.</h2>
+          <h2 className="cta-title">Your child&apos;s best<br />tutor is <em>already</em><br />in your society.</h2>
           <p className="cta-sub">Find tutors by subject, area and availability.</p>
           <div className="cta-buttons">
             <Link href="/browse" className="btn-cta-primary">Find a Tutor Now</Link>
