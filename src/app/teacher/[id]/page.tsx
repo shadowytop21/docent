@@ -139,12 +139,11 @@ export default function TeacherProfilePage() {
   const hasLocalTeacher = Boolean(cachedTeacher) || fallbackSnapshot.teachers.some((item) => item.id === params.id);
 
   useEffect(() => {
+    const controller = new AbortController();
     if (hasLocalTeacher) {
       setIsRemoteLoading(false);
-      return;
     }
 
-    const controller = new AbortController();
     loadRemoteCatalog(controller.signal);
     return () => {
       controller.abort();
