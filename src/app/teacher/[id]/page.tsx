@@ -5,6 +5,7 @@ import { useParams, useRouter } from "next/navigation";
 import { useToast } from "@/components/toast-provider";
 import { isTeacherVisiblePublicly, loadAppState, submitReview } from "@/lib/mock-db";
 import { getTeacherFromCache, upsertTeachersToCache } from "@/lib/teacher-cache";
+import { isTeacherSaved, recordTeacherContact, recordTeacherProfileView, toggleTeacherSaved } from "@/lib/teacher-analytics";
 import { formatCurrency, formatDate, whatsappLink } from "@/lib/utils";
 import type { ReviewRecord, TeacherRecord } from "@/lib/data";
 
@@ -26,6 +27,9 @@ export default function TeacherProfilePage() {
   const [isRemoteLoading, setIsRemoteLoading] = useState(true);
   const [localSnapshot, setLocalSnapshot] = useState(() => loadAppState());
   const [cachedTeacher, setCachedTeacher] = useState<TeacherRecord | null>(null);
+  const [photoFailed, setPhotoFailed] = useState(false);
+  const [isSavedByParent, setIsSavedByParent] = useState(false);
+  const viewedTeacherIdRef = useRef<string | null>(null);
 
   useEffect(() => {
     setMounted(true);
@@ -178,11 +182,34 @@ export default function TeacherProfilePage() {
   }
 
   const isParent = session?.role === "parent";
+  const isTeacherSession = session?.role === "teacher";
   const isSelfTeacher = Boolean(session?.id && currentTeacher.user_id === session.id);
   const existingReview = isParent
     ? teacherReviews.find((review) => review.parent_id === session?.id) ?? null
     : null;
   const initials = currentTeacher.name.split(" ").map((part) => part[0]).join("").slice(0, 2).toUpperCase();
+
+  useEffect(() => {
+    if (!mounted || !currentTeacher) {
+      return;
+    }
+
+    if (viewedTeacherIdRef.current === currentTeacher.id) {
+      return;
+    }
+
+    viewedTeacherIdRef.current = currentTeacher.id;
+    recordTeacherProfileView(currentTeacher.id);
+  }, [currentTeacher]);
+
+  useEffect(() => {
+    if (!isParent || !session?.id) {
+      setIsSavedByParent(false);
+      return;
+    }
+
+    setIsSavedByParent(isTeacherSaved(currentTeacher.id, session.id));
+  }, [currentTeacher.id, isParent, session?.id]);
 
   async function handleReviewSubmit(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -216,7 +243,17 @@ export default function TeacherProfilePage() {
   }
 
   async function handleContactTeacher() {
-    if (!session || !isParent) {
+    if (!session) {
+      setShowContactLoginModal(true);
+      return;
+    }
+
+    if (isTeacherSession) {
+      pushToast({ tone: "neutral", title: "Teachers cannot contact their own profile." });
+      return;
+    }
+
+    if (!isParent) {
       setShowContactLoginModal(true);
       return;
     }
@@ -227,12 +264,29 @@ export default function TeacherProfilePage() {
     }
 
     setIsContactLoading(true);
+    recordTeacherContact(currentTeacher.id);
     window.open(
       whatsappLink(currentTeacher.whatsapp_number, "Hi, I found your profile on Docent and I'm interested in home tuition for my child."),
       "_blank",
       "noopener,noreferrer",
     );
     setIsContactLoading(false);
+  }
+
+  function handleSaveProfile() {
+    if (!session) {
+      router.push(`/auth?role=parent&next=/teacher/${currentTeacher.id}`);
+      return;
+    }
+
+    if (!isParent || !session.id) {
+      pushToast({ tone: "neutral", title: "Only parents can save tutor profiles." });
+      return;
+    }
+
+    const nextSaved = toggleTeacherSaved(currentTeacher.id, session.id);
+    setIsSavedByParent(nextSaved);
+    pushToast({ tone: "success", title: nextSaved ? "Profile saved" : "Profile removed from saved list" });
   }
 
   return (
@@ -243,11 +297,12 @@ export default function TeacherProfilePage() {
           <div className="profile-top">
             <div className="profile-avatar-wrap">
               <div className="profile-avatar">
-                {currentTeacher.photo_url ? (
+                {currentTeacher.photo_url && !photoFailed ? (
                   <img
                     src={currentTeacher.photo_url}
                     alt={currentTeacher.name}
                     className="profile-avatar-image"
+                    onError={() => setPhotoFailed(true)}
                   />
                 ) : (
                   <span>{initials}</span>
@@ -364,16 +419,26 @@ export default function TeacherProfilePage() {
               >
                 {isContactLoading ? "Fetching contact..." : "Contact on WhatsApp"}
               </button>
+            ) : isTeacherSession ? (
+              <button type="button" disabled className="btn-whatsapp opacity-80">Contact unavailable to teachers</button>
             ) : (
               <button type="button" onClick={() => setShowContactLoginModal(true)} className="btn-whatsapp">Login to Contact</button>
             )}
-            <button type="button" className="btn-save">Save Profile</button>
+            {isParent ? (
+              <button type="button" onClick={handleSaveProfile} className="btn-save">
+                {isSavedByParent ? "Saved" : "Save Profile"}
+              </button>
+            ) : isTeacherSession ? (
+              <button type="button" onClick={() => router.push("/teacher/dashboard")} className="btn-save">Open Dashboard</button>
+            ) : (
+              <button type="button" onClick={() => router.push(`/auth?role=parent&next=/teacher/${currentTeacher.id}`)} className="btn-save">Login to Save</button>
+            )}
           </div>
 
           <div className="sidebar-detail"><div className="sd-icon sd-icon-location" aria-hidden="true" /><div><div className="sd-label">Location</div><div className="sd-val">{currentTeacher.locality}</div></div></div>
           <div className="sidebar-detail"><div className="sd-icon sd-icon-availability" aria-hidden="true" /><div><div className="sd-label">Availability</div><div className="sd-val">{currentTeacher.availability.join(" & ")}</div></div></div>
-          <div className="sidebar-detail"><div className="sd-icon sd-icon-response" aria-hidden="true" /><div><div className="sd-label">Response time</div><div className="sd-val">Usually within 1 hour</div></div></div>
-          <div className="sidebar-detail"><div className="sd-icon sd-icon-contact" aria-hidden="true" /><div><div className="sd-label">Parents contacted</div><div className="sd-val">{teacherReviews.length + 12} this month</div></div></div>
+          <div className="sidebar-detail"><div className="sd-icon sd-icon-response" aria-hidden="true" /><div><div className="sd-label">Response time</div><div className="sd-val">No response data yet</div></div></div>
+          <div className="sidebar-detail"><div className="sd-icon sd-icon-contact" aria-hidden="true" /><div><div className="sd-label">Parents contacted</div><div className="sd-val">Real contacts are tracked here</div></div></div>
         </div>
       </div>
 

@@ -1,15 +1,17 @@
 "use client";
 
 import Link from "next/link";
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import { useToast } from "@/components/toast-provider";
 import { loadAppState } from "@/lib/mock-db";
+import { getTeacherAnalyticsSummary } from "@/lib/teacher-analytics";
 
 export default function TeacherDashboardPage() {
   const router = useRouter();
   const { pushToast } = useToast();
   const [mounted, setMounted] = useState(false);
+  const [analyticsTick, setAnalyticsTick] = useState(0);
 
   useEffect(() => {
     const snapshot = loadAppState();
@@ -51,6 +53,38 @@ export default function TeacherDashboardPage() {
 
   const currentTeacher = teacher;
 
+  const analytics = useMemo(() => getTeacherAnalyticsSummary(currentTeacher.id), [currentTeacher.id, analyticsTick]);
+
+  useEffect(() => {
+    const refreshAnalytics = () => setAnalyticsTick((value) => value + 1);
+
+    refreshAnalytics();
+    window.addEventListener("docent-teacher-analytics-change", refreshAnalytics);
+    window.addEventListener("storage", refreshAnalytics);
+
+    const intervalId = window.setInterval(refreshAnalytics, 15000);
+
+    return () => {
+      window.removeEventListener("docent-teacher-analytics-change", refreshAnalytics);
+      window.removeEventListener("storage", refreshAnalytics);
+      window.clearInterval(intervalId);
+    };
+  }, [currentTeacher.id]);
+
+  const profileCompletionItems = useMemo(() => {
+    const items = [
+      { label: "Profile photo uploaded", done: Boolean(currentTeacher.photo_url) },
+      { label: "Bio written", done: Boolean(currentTeacher.bio.trim()) },
+      { label: "Subjects & grades filled", done: currentTeacher.subjects.length > 0 && currentTeacher.grades.length > 0 },
+      { label: "Location & price set", done: Boolean(currentTeacher.locality.trim()) && currentTeacher.price_per_month > 0 },
+      { label: "WhatsApp number added", done: Boolean(currentTeacher.whatsapp_number.trim()) },
+    ];
+
+    return items;
+  }, [currentTeacher.bio, currentTeacher.grades.length, currentTeacher.locality, currentTeacher.photo_url, currentTeacher.price_per_month, currentTeacher.subjects.length, currentTeacher.whatsapp_number]);
+
+  const completionPercent = Math.round((profileCompletionItems.filter((item) => item.done).length / profileCompletionItems.length) * 100);
+
   function copyProfileLink() {
     const profileUrl = `${window.location.origin}/teacher/${currentTeacher.id}`;
 
@@ -65,11 +99,7 @@ export default function TeacherDashboardPage() {
   }
 
   const completionItems = [
-    "Profile photo uploaded",
-    "Bio written",
-    "Subjects & grades filled",
-    "Location & price set",
-    "Upload verification document",
+    ...profileCompletionItems,
   ];
 
   return (
@@ -134,18 +164,18 @@ export default function TeacherDashboardPage() {
               <div className="dash-card-title">Profile Completion</div>
               <div className="completion-wrap">
                 <div className="completion-header">
-                  <span className="completion-pct">80%</span>
-                  <span className="completion-label">Complete — add 1 more to request verification</span>
+                  <span className="completion-pct">{completionPercent}%</span>
+                  <span className="completion-label">Based on filled profile fields</span>
                 </div>
                 <div className="completion-bar-bg">
-                  <div className="completion-bar-fill" style={{ width: "80%" }} />
+                  <div className="completion-bar-fill" style={{ width: `${completionPercent}%` }} />
                 </div>
               </div>
               <div className="completion-items">
                 {completionItems.map((item, index) => (
-                  <div key={item} className="completion-item">
-                    <div className={`ci-dot ${index < 4 ? "done" : ""}`} />
-                    <span className={`ci-text ${index < 4 ? "done" : ""}`}>{item}</span>
+                  <div key={item.label} className="completion-item">
+                    <div className={`ci-dot ${item.done ? "done" : ""}`} />
+                    <span className={`ci-text ${item.done ? "done" : ""}`}>{item.label}</span>
                   </div>
                 ))}
               </div>
@@ -170,15 +200,15 @@ export default function TeacherDashboardPage() {
             </div>
             <div className="analytics-grid">
               <div className="analytics-card">
-                <div className="analytics-num">{Math.max(teacher.reviews_count * 5, 24)}</div>
+                <div className="analytics-num">{analytics.viewsLast7Days}</div>
                 <div className="analytics-label">Profile views this week</div>
               </div>
               <div className="analytics-card">
-                <div className="analytics-num">{teacher.reviews_count + 12}</div>
+                <div className="analytics-num">{analytics.contactsLast7Days}</div>
                 <div className="analytics-label">WhatsApp contacts</div>
               </div>
               <div className="analytics-card">
-                <div className="analytics-num">{teacher.reviews_count + 8}</div>
+                <div className="analytics-num">{analytics.savedCount}</div>
                 <div className="analytics-label">Parents saved you</div>
               </div>
             </div>
@@ -194,6 +224,7 @@ export default function TeacherDashboardPage() {
             </div>
             <div className="dash-review-note">
               Your current public rating is <strong>{teacher.rating.toFixed(1)}</strong> from <strong>{teacher.reviews_count}</strong> review{teacher.reviews_count === 1 ? "" : "s"}.
+              <span className="block pt-2 text-[12px] text-[var(--muted)]">Analytics refresh in real time as parents view, contact, and save your profile.</span>
             </div>
           </section>
         </div>
