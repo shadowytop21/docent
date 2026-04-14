@@ -9,6 +9,45 @@ import { isTeacherSaved, recordTeacherContact, recordTeacherProfileView, toggleT
 import { formatCurrency, formatDate, whatsappLink } from "@/lib/utils";
 import type { ReviewRecord, TeacherRecord } from "@/lib/data";
 
+function SidebarGlyph({ kind }: { kind: "location" | "availability" | "response" | "contact" }) {
+  if (kind === "location") {
+    return (
+      <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+        <path d="M20 10c0 5-8 12-8 12S4 15 4 10a8 8 0 1 1 16 0Z" />
+        <circle cx="12" cy="10" r="3" />
+      </svg>
+    );
+  }
+
+  if (kind === "availability") {
+    return (
+      <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+        <circle cx="12" cy="12" r="9" />
+        <path d="M12 7v5l3 2" />
+      </svg>
+    );
+  }
+
+  if (kind === "response") {
+    return (
+      <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+        <path d="M21 15a4 4 0 0 1-4 4H8l-5 3V7a4 4 0 0 1 4-4h10a4 4 0 0 1 4 4z" />
+        <path d="M8 9h8" />
+        <path d="M8 13h5" />
+      </svg>
+    );
+  }
+
+  return (
+    <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+      <path d="M17 2H7a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V4a2 2 0 0 0-2-2z" />
+      <path d="M9 6h6" />
+      <path d="M9 10h6" />
+      <path d="M9 14h3" />
+    </svg>
+  );
+}
+
 export default function TeacherProfilePage() {
   const params = useParams<{ id: string }>();
   const router = useRouter();
@@ -435,10 +474,10 @@ export default function TeacherProfilePage() {
             )}
           </div>
 
-          <div className="sidebar-detail"><div className="sd-icon sd-icon-location" aria-hidden="true" /><div><div className="sd-label">Location</div><div className="sd-val">{currentTeacher.locality}</div></div></div>
-          <div className="sidebar-detail"><div className="sd-icon sd-icon-availability" aria-hidden="true" /><div><div className="sd-label">Availability</div><div className="sd-val">{currentTeacher.availability.join(" & ")}</div></div></div>
-          <div className="sidebar-detail"><div className="sd-icon sd-icon-response" aria-hidden="true" /><div><div className="sd-label">Response time</div><div className="sd-val">No response data yet</div></div></div>
-          <div className="sidebar-detail"><div className="sd-icon sd-icon-contact" aria-hidden="true" /><div><div className="sd-label">Parents contacted</div><div className="sd-val">Real contacts are tracked here</div></div></div>
+          <div className="sidebar-detail"><div className="sd-icon" aria-hidden="true"><SidebarGlyph kind="location" /></div><div><div className="sd-label">Location</div><div className="sd-val">{currentTeacher.locality}</div></div></div>
+          <div className="sidebar-detail"><div className="sd-icon" aria-hidden="true"><SidebarGlyph kind="availability" /></div><div><div className="sd-label">Availability</div><div className="sd-val">{currentTeacher.availability.join(" & ")}</div></div></div>
+          <div className="sidebar-detail"><div className="sd-icon" aria-hidden="true"><SidebarGlyph kind="response" /></div><div><div className="sd-label">Response time</div><div className="sd-val">No response data yet</div></div></div>
+          <div className="sidebar-detail"><div className="sd-icon" aria-hidden="true"><SidebarGlyph kind="contact" /></div><div><div className="sd-label">Parents contacted</div><div className="sd-val">Real contacts are tracked here</div></div></div>
         </div>
       </div>
 
