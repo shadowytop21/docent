@@ -19,26 +19,34 @@ function isProtectedAdminApi(pathname: string) {
   return true;
 }
 
+function withSecurityHeaders(response: NextResponse) {
+  response.headers.set("X-Content-Type-Options", "nosniff");
+  response.headers.set("X-Frame-Options", "DENY");
+  response.headers.set("Referrer-Policy", "strict-origin-when-cross-origin");
+  response.headers.set("Permissions-Policy", "camera=(), microphone=(), geolocation=()");
+  return response;
+}
+
 export function middleware(request: NextRequest) {
   const { pathname } = request.nextUrl;
   if (!isAdminPage(pathname) && !isProtectedAdminApi(pathname)) {
-    return NextResponse.next();
+    return withSecurityHeaders(NextResponse.next());
   }
 
   // Fast-path gate: detailed token verification still happens inside admin routes/pages.
   const hasSessionCookie = Boolean(request.cookies.get(ADMIN_SESSION_COOKIE)?.value);
   if (hasSessionCookie) {
-    return NextResponse.next();
+    return withSecurityHeaders(NextResponse.next());
   }
 
   if (isProtectedAdminApi(pathname)) {
-    return NextResponse.json({ message: "Unauthorized" }, { status: 401 });
+    return withSecurityHeaders(NextResponse.json({ message: "Unauthorized" }, { status: 401 }));
   }
 
   const redirectUrl = request.nextUrl.clone();
   redirectUrl.pathname = "/admin/login";
   redirectUrl.search = "";
-  return NextResponse.redirect(redirectUrl);
+  return withSecurityHeaders(NextResponse.redirect(redirectUrl));
 }
 
 export const config = {

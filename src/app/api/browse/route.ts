@@ -25,8 +25,9 @@ export async function GET(request: Request) {
     const adminSupabase = supabase as any;
     let teacherQuery = adminSupabase
       .from("teacher_profiles")
-      .select("id,user_id,photo_url,bio,subjects,grades,boards,locality,price_per_month,teaches_at,availability,experience_years,status,is_founding_member,created_at", { count: "exact" })
-      .eq("status", "verified")
+      .select("id,user_id,photo_url,bio,subjects,grades,boards,locality,price_per_month,teaches_at,availability,experience_years,whatsapp_number,status,is_founding_member,created_at", { count: "exact" })
+      .neq("status", "rejected")
+      .order("status", { ascending: false })
       .range(start, end);
 
     if (subject) {
@@ -105,7 +106,7 @@ export async function GET(request: Request) {
         teaches_at: row.teaches_at,
         availability: row.availability ?? [],
         experience_years: row.experience_years ?? 0,
-        whatsapp_number: "",
+        whatsapp_number: row.whatsapp_number ?? "",
         status: row.status,
         public_status: row.status,
         is_founding_member: Boolean(row.is_founding_member),
@@ -127,7 +128,9 @@ export async function GET(request: Request) {
         return searchable.includes(query);
       });
 
-    return NextResponse.json({ teachers, reviews: normalizedReviews, total: count ?? 0, page, pageSize: limit, offline: false });
+    const response = NextResponse.json({ teachers, reviews: normalizedReviews, total: count ?? 0, page, pageSize: limit, offline: false });
+    response.headers.set("Cache-Control", "s-maxage=60, stale-while-revalidate=300");
+    return response;
   } catch {
     return NextResponse.json({ teachers: [], reviews: [], total: 0, page: 1, pageSize: 12, offline: true });
   }

@@ -1,40 +1,101 @@
+"use client";
+
+import { useEffect, useState } from "react";
 import Image from "next/image";
 import Link from "next/link";
 import { JoinAsTeacherAction } from "@/components/join-as-teacher-action";
+import { clearSession, loadAppState } from "@/lib/mock-db";
+import { useRouter } from "next/navigation";
 
 export function SiteHeader() {
+  const router = useRouter();
+  const [isScrolled, setIsScrolled] = useState(false);
+  const [sessionName, setSessionName] = useState<string | null>(null);
+  const [sessionRole, setSessionRole] = useState<"teacher" | "parent" | null>(null);
+
+  useEffect(() => {
+    const onScroll = () => {
+      setIsScrolled(window.scrollY > 20);
+    };
+
+    const refreshSession = () => {
+      const snapshot = loadAppState();
+      setSessionName(snapshot.session?.name ?? null);
+      setSessionRole(snapshot.session?.role ?? null);
+    };
+
+    refreshSession();
+
+    onScroll();
+    window.addEventListener("scroll", onScroll, { passive: true });
+    window.addEventListener("docent-session-change", refreshSession);
+
+    return () => {
+      window.removeEventListener("scroll", onScroll);
+      window.removeEventListener("docent-session-change", refreshSession);
+    };
+  }, []);
+
+  function signOut() {
+    clearSession();
+    setSessionName(null);
+    setSessionRole(null);
+    router.push("/auth");
+  }
+
   return (
-    <header className="sticky top-0 z-40 border-b border-borderWarm bg-[rgba(250,250,252,0.78)] backdrop-blur-2xl">
-      <div className="mx-auto mt-3 flex max-w-7xl items-center justify-between rounded-2xl border border-white/70 bg-white/80 px-6 py-4 shadow-[0_10px_35px_rgba(15,15,26,0.08)] lg:px-8">
+    <header className={`sticky top-0 z-40 border-b border-[var(--border)] bg-[rgba(253,250,244,0.97)] px-4 lg:px-16 ${isScrolled ? "shadow-[0_4px_24px_rgba(26,39,68,0.1)]" : "shadow-[0_1px_0_rgba(26,39,68,0.06)]"}`}>
+      <div className="mx-auto flex h-[68px] w-full max-w-7xl items-center justify-between gap-3">
         <Link href="/" className="flex items-center gap-3">
-          <Image src="/docent-mark-v2.png?v=4" alt="Docent logo" width={96} height={96} quality={80} priority className="h-9 w-auto" />
-          <div>
-            <div className="text-lg font-bold tracking-tight text-navy font-display">Docent</div>
-            <div className="text-[10px] font-semibold uppercase tracking-[0.3em] text-[var(--accent)]">
-              Neighbourhood Trust Network
-            </div>
+          <div className="rounded-lg bg-[var(--navy)] p-2">
+            <Image src="/docent-mark-v2.png?v=4" alt="Docent logo" width={22} height={22} quality={80} priority className="h-[22px] w-[22px] invert" />
           </div>
+          <div className="font-mono text-[15px] font-medium tracking-[0.06em] text-[var(--navy)]">Docent</div>
         </Link>
 
-        <nav className="hidden items-center gap-3 md:flex">
-          <Link href="/browse" className="rounded-full px-4 py-2 text-sm font-semibold text-navy transition hover:bg-[var(--accent-light)] hover:text-[var(--accent)]">
-            Browse Experts
+        <nav className="hidden items-center gap-8 md:flex">
+          <Link href="/browse" className="text-sm text-[var(--muted)] transition hover:text-[var(--navy)]">
+            Browse Teachers
           </Link>
-          {/* Use centralized role-aware join flow so all entry points behave consistently. */}
-          <JoinAsTeacherAction className="rounded-full px-4 py-2 text-sm font-semibold text-navy transition hover:bg-[var(--accent-light)] hover:text-[var(--accent)]">
-            Join as Expert
+          <Link href="/#subjects" className="text-sm text-[var(--muted)] transition hover:text-[var(--navy)]">
+            Subjects
+          </Link>
+          <Link href="/#how-it-works" className="text-sm text-[var(--muted)] transition hover:text-[var(--navy)]">
+            How it Works
+          </Link>
+          <JoinAsTeacherAction className="text-sm text-[var(--muted)] transition hover:text-[var(--navy)]">
+            Join as Teacher
           </JoinAsTeacherAction>
-          <Link href="/auth" className="rounded-full bg-[var(--accent)] px-5 py-2 text-sm font-semibold text-white transition hover:bg-[#4338ca]">
-            Sign In
-          </Link>
         </nav>
 
+        <div className="hidden items-center gap-3 md:flex">
+          {sessionName ? (
+            <>
+              <div className="hidden rounded-full border border-[var(--border)] bg-white px-4 py-2 text-[13px] text-[var(--navy)] lg:block">
+                {sessionName} · {sessionRole ?? "member"}
+              </div>
+              <Link href={sessionRole === "teacher" ? "/teacher/dashboard" : "/browse"} className="btn-secondary px-5 py-2 text-[13px]">
+                Dashboard
+              </Link>
+              <button type="button" onClick={signOut} className="btn-primary px-5 py-2 text-[13px]">
+                Logout
+              </button>
+            </>
+          ) : (
+            <>
+              <Link href="/auth" className="btn-secondary px-5 py-2 text-[13px]">
+                Login
+              </Link>
+              <JoinAsTeacherAction className="btn-primary px-5 py-2 text-[13px]">
+                Join Free
+              </JoinAsTeacherAction>
+            </>
+          )}
+        </div>
+
         <div className="md:hidden">
-          <Link
-            href="/browse"
-            className="inline-flex h-11 items-center rounded-full bg-[var(--accent)] px-4 text-sm font-semibold text-white"
-          >
-            Browse
+          <Link href={sessionRole === "teacher" ? "/teacher/dashboard" : "/browse"} className="btn-primary inline-flex h-10 items-center px-4 text-sm">
+            {sessionName ? "Dashboard" : "Browse"}
           </Link>
         </div>
       </div>

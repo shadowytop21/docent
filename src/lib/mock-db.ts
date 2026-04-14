@@ -17,7 +17,51 @@ export interface AppSnapshot {
 
 const STORAGE_KEY = "docent.app-state.v1";
 const ADMIN_STORAGE_KEY = "docent.admin-auth.v1";
+const HOMEPAGE_SHOWCASE_KEY = "docent.homepage-showcase.v1";
 const REVIEW_RATE_LIMIT_MS = 24 * 60 * 60 * 1000;
+
+export type HomepageFeaturedCard = {
+  initials: string;
+  name: string;
+  locality: string;
+  tags: string[];
+  price: number;
+  rating: number;
+  tone?: "default" | "green";
+};
+
+export type HomepageShowcaseConfig = {
+  cards: HomepageFeaturedCard[];
+  stats: Array<{ label: string; value: string }>;
+};
+
+export const defaultHomepageShowcaseConfig: HomepageShowcaseConfig = {
+  cards: [
+    {
+      initials: "PS",
+      name: "Priya Sharma",
+      locality: "Civil Lines, Mathura",
+      tags: ["Maths", "Physics", "Class 9-12"],
+      price: 1200,
+      rating: 4.9,
+      tone: "default",
+    },
+    {
+      initials: "RM",
+      name: "Rahul Mehta",
+      locality: "Vrindavan, Mathura",
+      tags: ["Chemistry", "Biology", "NEET"],
+      price: 1500,
+      rating: 4.8,
+      tone: "green",
+    },
+  ],
+  stats: [
+    { label: "Tutors", value: "50+" },
+    { label: "Subjects", value: "12" },
+    { label: "Areas", value: "15" },
+  ],
+};
 
 export type AppSecurityErrorCode =
   | "TEACHER_REVIEW_FORBIDDEN"
@@ -55,7 +99,8 @@ function seedState(): AppSnapshot {
 }
 
 function isTeacherPublic(teacher: TeacherRecord) {
-  return teacher.status === "verified" || (teacher.public_status ?? "pending") === "verified";
+  // Show both verified and pending teachers (but not rejected)
+  return teacher.status !== "rejected" && teacher.status !== undefined;
 }
 
 function refreshTeacherAggregates(teachers: TeacherRecord[], reviews: ReviewRecord[]) {
@@ -118,6 +163,14 @@ function writeStorage(snapshot: AppSnapshot) {
   window.localStorage.setItem(STORAGE_KEY, JSON.stringify(snapshot));
 }
 
+function notifySessionChange() {
+  if (typeof window === "undefined") {
+    return;
+  }
+
+  window.dispatchEvent(new Event("docent-session-change"));
+}
+
 function readAdminStorage(): AdminAuthRecord | null {
   if (typeof window === "undefined") {
     return null;
@@ -169,17 +222,23 @@ export function mutateAppState(mutator: (snapshot: AppSnapshot) => AppSnapshot) 
 }
 
 export function saveSession(session: SessionRecord) {
-  return mutateAppState((snapshot) => ({
-    ...snapshot,
+  const snapshot = mutateAppState((current) => ({
+    ...current,
     session,
   }));
+
+  notifySessionChange();
+  return snapshot;
 }
 
 export function clearSession() {
-  return mutateAppState((snapshot) => ({
-    ...snapshot,
+  const snapshot = mutateAppState((current) => ({
+    ...current,
     session: null,
   }));
+
+  notifySessionChange();
+  return snapshot;
 }
 
 export function loadAdminAuth() {
@@ -198,6 +257,51 @@ export function saveAdminAuth(email: string) {
 
 export function clearAdminAuth() {
   writeAdminStorage(null);
+}
+
+export function loadHomepageShowcaseConfig(): HomepageShowcaseConfig {
+  if (typeof window === "undefined") {
+    return defaultHomepageShowcaseConfig;
+  }
+
+  const raw = window.localStorage.getItem(HOMEPAGE_SHOWCASE_KEY);
+  if (!raw) {
+    return defaultHomepageShowcaseConfig;
+  }
+
+  try {
+    const parsed = JSON.parse(raw) as Partial<HomepageShowcaseConfig>;
+    if (!parsed.cards?.length || !parsed.stats?.length) {
+      return defaultHomepageShowcaseConfig;
+    }
+
+    return {
+      cards: parsed.cards.slice(0, 2).map((card, index) => ({
+        initials: card.initials?.slice(0, 2).toUpperCase() || defaultHomepageShowcaseConfig.cards[index]?.initials || "NA",
+        name: card.name || defaultHomepageShowcaseConfig.cards[index]?.name || "Teacher",
+        locality: card.locality || defaultHomepageShowcaseConfig.cards[index]?.locality || "Mathura",
+        tags: (card.tags ?? defaultHomepageShowcaseConfig.cards[index]?.tags ?? []).slice(0, 3),
+        price: Number(card.price ?? defaultHomepageShowcaseConfig.cards[index]?.price ?? 1000),
+        rating: Number(card.rating ?? defaultHomepageShowcaseConfig.cards[index]?.rating ?? 4.5),
+        tone: card.tone === "green" ? "green" : "default",
+      })),
+      stats: parsed.stats.slice(0, 3).map((stat, index) => ({
+        label: stat.label || defaultHomepageShowcaseConfig.stats[index]?.label || "Metric",
+        value: stat.value || defaultHomepageShowcaseConfig.stats[index]?.value || "0",
+      })),
+    };
+  } catch {
+    return defaultHomepageShowcaseConfig;
+  }
+}
+
+export function saveHomepageShowcaseConfig(config: HomepageShowcaseConfig) {
+  if (typeof window === "undefined") {
+    return defaultHomepageShowcaseConfig;
+  }
+
+  window.localStorage.setItem(HOMEPAGE_SHOWCASE_KEY, JSON.stringify(config));
+  return config;
 }
 
 export function isAdminAuthValid(adminEmail: string) {

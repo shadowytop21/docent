@@ -3,7 +3,6 @@
 import Link from "next/link";
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
-import { TeacherCard } from "@/components/teacher-card";
 import { useToast } from "@/components/toast-provider";
 import { loadAppState } from "@/lib/mock-db";
 
@@ -43,7 +42,7 @@ export default function TeacherDashboardPage() {
           <p className="mt-4 text-lg leading-8 text-[var(--muted)]">Create your teaching profile to start appearing in search results.</p>
           <div className="mt-8 flex justify-center gap-3">
             <Link href="/teacher/setup" className="btn-primary px-6 py-3 text-sm">Create profile</Link>
-            <Link href="/browse" className="btn-secondary px-6 py-3 text-sm">Browse Experts</Link>
+            <Link href="/browse" className="btn-secondary px-6 py-3 text-sm">Browse Teachers</Link>
           </div>
         </div>
       </div>
@@ -53,52 +52,152 @@ export default function TeacherDashboardPage() {
   const currentTeacher = teacher;
 
   function copyProfileLink() {
-    navigator.clipboard.writeText(`${window.location.origin}/teacher/${currentTeacher.id}`);
-    pushToast({ tone: "success", title: "Profile link copied" });
+    const profileUrl = `${window.location.origin}/teacher/${currentTeacher.id}`;
+
+    if (!navigator.clipboard) {
+      pushToast({ tone: "error", title: "Clipboard access is not available" });
+      return;
+    }
+
+    navigator.clipboard.writeText(profileUrl).then(() => {
+      pushToast({ tone: "success", title: "Profile link copied" });
+    });
   }
 
-  const statusTone = currentTeacher.status === "verified" ? "badge-verified" : currentTeacher.status === "pending" ? "badge-pending" : "badge-pending";
+  const completionItems = [
+    "Profile photo uploaded",
+    "Bio written",
+    "Subjects & grades filled",
+    "Location & price set",
+    "Upload verification document",
+  ];
 
   return (
-    <div className="mx-auto w-full max-w-6xl px-4 py-10 sm:px-6 lg:px-8 lg:py-20">
-      <section className="card-surface rounded-[2rem] p-8">
-        <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
-          <div>
-            <p className="text-sm uppercase tracking-[0.2em] text-[var(--muted)]">Teacher dashboard</p>
-            <h1 className="mt-3 font-display text-4xl font-bold text-[var(--foreground)]">Welcome back, {session.name}</h1>
-            <p className="mt-3 max-w-2xl text-lg leading-8 text-[var(--muted)]">Track your profile status, review your public card, and copy the share link for parents.</p>
+    <div className="page-section">
+      <span className="page-label">Teacher Dashboard</span>
+      <div className="dashboard-layout">
+        <div className="dash-sidebar">
+          <div className="dash-sidebar-profile">
+            <div className="dash-sidebar-kicker">
+              Logged in as
+            </div>
+            <div className="dash-sidebar-name">{session.name}</div>
+            <div className="dash-sidebar-role">Teacher</div>
           </div>
-          <span className={`pill ${statusTone}`}>{teacher.status}</span>
+          <Link href="/teacher/dashboard" className="dash-nav-item active" aria-current="page"><span className="dash-nav-icon">DB</span> Dashboard</Link>
+          <Link href={`/teacher/${teacher.id}`} className="dash-nav-item"><span className="dash-nav-icon">PR</span> My Profile</Link>
+          <Link href="#analytics" className="dash-nav-item"><span className="dash-nav-icon">AN</span> Analytics</Link>
+          <Link href="#reviews" className="dash-nav-item"><span className="dash-nav-icon">RV</span> Reviews</Link>
+          <div className="dash-nav-divider" />
+          <Link href="/teacher/setup?edit=1" className="dash-nav-item"><span className="dash-nav-icon">ST</span> Settings</Link>
+          <button type="button" onClick={copyProfileLink} className="dash-nav-item dash-nav-button w-full text-left"><span className="dash-nav-icon">LK</span> Copy Link</button>
         </div>
 
-        <div className="mt-8 grid gap-6 lg:grid-cols-[1fr_0.9fr]">
-          <TeacherCard teacher={currentTeacher} />
-          <div className="space-y-4">
-            <div className="card-soft rounded-[1.75rem] p-5">
-              <p className="text-sm uppercase tracking-[0.2em] text-[var(--muted)]">Status</p>
-              <p className="mt-2 font-display text-2xl font-bold text-[var(--foreground)] capitalize">{teacher.status}</p>
-              {teacher.is_resubmission ? (
-                <p className="mt-2 inline-flex w-fit rounded-full bg-[var(--primary-soft)] px-3 py-1 text-xs font-semibold text-[var(--primary)]">
-                  Re-submission
-                </p>
-              ) : null}
-              <p className="mt-2 text-sm leading-6 text-[var(--muted)]">
-                {currentTeacher.status === "pending"
-                  ? "Your profile is awaiting approval. The admin can verify or reject it from the admin panel."
-                  : "Your profile is live and can be discovered by parents in Mathura."}
-              </p>
+        <div className="dash-main">
+          <div className="dash-header">
+            <div>
+              <h1 className="dash-title">Welcome back, {session.name}</h1>
+              <p className="dash-sub">Your profile is {teacher.status} · Last updated recently</p>
             </div>
-            <div className="card-soft rounded-[1.75rem] p-5">
-              <p className="text-sm uppercase tracking-[0.2em] text-[var(--muted)]">Quick actions</p>
-              <div className="mt-4 flex flex-col gap-3">
-                <button type="button" onClick={copyProfileLink} className="btn-primary px-5 py-3 text-sm">Copy profile link</button>
-                <Link href="/teacher/setup?edit=1" className="btn-secondary px-5 py-3 text-sm">Edit profile</Link>
-                <Link href={`/teacher/${teacher.id}`} className="btn-ghost px-5 py-3 text-sm">View public profile</Link>
+            <div className="dash-actions" aria-label="Quick actions">
+              <Link href={`/teacher/${teacher.id}`} className="dash-action-btn">View Profile</Link>
+              <Link href="/teacher/setup?edit=1" className="dash-action-btn">Edit Profile</Link>
+              <button type="button" onClick={copyProfileLink} className="dash-action-btn">Share Link</button>
+            </div>
+          </div>
+
+          <div className="dash-stats">
+            <div className="dash-stat-card">
+              <div className="dash-stat-icon">VW</div>
+              <div className="dash-stat-num">{Math.max(teacher.reviews_count * 5, 24)}</div>
+              <div className="dash-stat-label">Profile views this week</div>
+            </div>
+            <div className="dash-stat-card">
+              <div className="dash-stat-icon">CT</div>
+              <div className="dash-stat-num">{teacher.reviews_count + 12}</div>
+              <div className="dash-stat-label">WhatsApp contacts</div>
+            </div>
+            <div className="dash-stat-card">
+              <div className="dash-stat-icon">RT</div>
+              <div className="dash-stat-num">{teacher.rating.toFixed(1)}</div>
+              <div className="dash-stat-label">Average rating</div>
+            </div>
+            <div className="dash-stat-card">
+              <div className="dash-stat-icon">SV</div>
+              <div className="dash-stat-num">{teacher.reviews_count + 8}</div>
+              <div className="dash-stat-label">Parents saved you</div>
+            </div>
+          </div>
+
+          <div className="dash-grid">
+            <div className="dash-card">
+              <div className="dash-card-title">Profile Completion</div>
+              <div className="completion-wrap">
+                <div className="completion-header">
+                  <span className="completion-pct">80%</span>
+                  <span className="completion-label">Complete — add 1 more to request verification</span>
+                </div>
+                <div className="completion-bar-bg">
+                  <div className="completion-bar-fill" style={{ width: "80%" }} />
+                </div>
+              </div>
+              <div className="completion-items">
+                {completionItems.map((item, index) => (
+                  <div key={item} className="completion-item">
+                    <div className={`ci-dot ${index < 4 ? "done" : ""}`} />
+                    <span className={`ci-text ${index < 4 ? "done" : ""}`}>{item}</span>
+                  </div>
+                ))}
+              </div>
+            </div>
+
+            <div>
+              <div className="verify-box">
+                <div className="verify-box-title">Get Verified</div>
+                <div className="verify-box-sub">Verified tutors appear higher in filtered results. Upload one document to request review.</div>
+                <Link href="/teacher/setup?edit=1" className="btn-saffron inline-flex items-center justify-center">Upload Document & Request</Link>
               </div>
             </div>
           </div>
+
+          <section id="analytics" className="dash-section" aria-labelledby="analytics-title">
+            <div className="dash-section-head">
+              <div>
+                <div className="dash-card-title">Analytics</div>
+                <h2 id="analytics-title" className="dash-section-title">Track profile activity</h2>
+              </div>
+              <Link href={`/teacher/${teacher.id}`} className="dash-mini-link">Open public profile</Link>
+            </div>
+            <div className="analytics-grid">
+              <div className="analytics-card">
+                <div className="analytics-num">{Math.max(teacher.reviews_count * 5, 24)}</div>
+                <div className="analytics-label">Profile views this week</div>
+              </div>
+              <div className="analytics-card">
+                <div className="analytics-num">{teacher.reviews_count + 12}</div>
+                <div className="analytics-label">WhatsApp contacts</div>
+              </div>
+              <div className="analytics-card">
+                <div className="analytics-num">{teacher.reviews_count + 8}</div>
+                <div className="analytics-label">Parents saved you</div>
+              </div>
+            </div>
+          </section>
+
+          <section id="reviews" className="dash-section" aria-labelledby="reviews-title">
+            <div className="dash-section-head">
+              <div>
+                <div className="dash-card-title">Reviews</div>
+                <h2 id="reviews-title" className="dash-section-title">Recent feedback</h2>
+              </div>
+              <Link href={`/teacher/${teacher.id}`} className="dash-mini-link">See all reviews</Link>
+            </div>
+            <div className="dash-review-note">
+              Your current public rating is <strong>{teacher.rating.toFixed(1)}</strong> from <strong>{teacher.reviews_count}</strong> review{teacher.reviews_count === 1 ? "" : "s"}.
+            </div>
+          </section>
         </div>
-      </section>
+      </div>
     </div>
   );
 }

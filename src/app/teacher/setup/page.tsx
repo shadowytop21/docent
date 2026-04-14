@@ -386,7 +386,7 @@ export default function TeacherSetupPage() {
     return (
       <div className="mx-auto flex min-h-[70vh] w-full max-w-3xl items-center px-4 py-16 sm:px-6 lg:px-8">
         <div className="card-surface w-full rounded-[2rem] p-10 text-center">
-          <div className="mx-auto flex h-20 w-20 items-center justify-center rounded-full bg-[var(--success-soft)] text-3xl text-[var(--success)]">✓</div>
+          <div className="mx-auto flex h-20 w-20 items-center justify-center rounded-full bg-[var(--success-soft)] text-xl font-semibold text-[var(--success)]">Done</div>
           <h1 className="mt-6 font-display text-4xl font-bold text-[var(--foreground)]">{isEditing ? "Profile re-submitted!" : "Profile submitted!"}</h1>
           <p className="mt-4 text-lg leading-8 text-[var(--muted)]">
             {isEditing
@@ -395,7 +395,7 @@ export default function TeacherSetupPage() {
           </p>
           <div className="mt-8 flex justify-center gap-3">
             <button type="button" onClick={() => router.push("/teacher/dashboard")} className="btn-primary px-6 py-3 text-sm">Go to dashboard</button>
-            <button type="button" onClick={() => router.push("/browse")} className="btn-secondary px-6 py-3 text-sm">Browse Experts</button>
+            <button type="button" onClick={() => router.push("/browse")} className="btn-secondary px-6 py-3 text-sm">Browse Teachers</button>
           </div>
         </div>
       </div>

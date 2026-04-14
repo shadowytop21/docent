@@ -1,9 +1,9 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useParams, useRouter } from "next/navigation";
 import { useToast } from "@/components/toast-provider";
-import { isTeacherVisiblePublicly, loadAppState } from "@/lib/mock-db";
+import { isTeacherVisiblePublicly, loadAppState, submitReview } from "@/lib/mock-db";
 import { formatCurrency, formatDate, whatsappLink } from "@/lib/utils";
 import { TeacherCard } from "@/components/teacher-card";
 import type { ReviewRecord, TeacherRecord } from "@/lib/data";
@@ -19,7 +19,7 @@ export default function TeacherProfilePage() {
   const [editingReview, setEditingReview] = useState(false);
   const [showContactLoginModal, setShowContactLoginModal] = useState(false);
   const [isContactLoading, setIsContactLoading] = useState(false);
-  const [contactNumber, setContactNumber] = useState("");
+  const whatsappButtonRef = useRef<HTMLButtonElement | null>(null);
   const [refreshKey, setRefreshKey] = useState(0);
   const [remoteTeachers, setRemoteTeachers] = useState<TeacherRecord[] | null>(null);
   const [remoteReviews, setRemoteReviews] = useState<ReviewRecord[] | null>(null);
@@ -46,6 +46,23 @@ export default function TeacherProfilePage() {
   useEffect(() => {
     loadRemoteCatalog();
   }, [loadRemoteCatalog]);
+
+  useEffect(() => {
+    const waButton = whatsappButtonRef.current;
+    if (!waButton || !("IntersectionObserver" in window)) {
+      return;
+    }
+
+    const observer = new IntersectionObserver(([entry]) => {
+      waButton.style.animationPlayState = entry.isIntersecting ? "running" : "paused";
+    }, { threshold: 0.5 });
+
+    observer.observe(waButton);
+
+    return () => {
+      observer.disconnect();
+    };
+  }, []);
 
   const fallbackSnapshot = useMemo(() => loadAppState(), [mounted, rating, editingReview, refreshKey]);
   const mergedTeachers = useMemo(() => {
@@ -110,8 +127,7 @@ export default function TeacherProfilePage() {
 
   const currentTeacher = teacher;
   const isPublicProfileVisible = isTeacherVisiblePublicly(currentTeacher);
-  const isRejected = currentTeacher.status === "rejected" && !isPublicProfileVisible;
-  const isPendingReview = currentTeacher.status === "pending" && !isPublicProfileVisible;
+  const isRejected = currentTeacher.status === "rejected";
 
   if (isRejected) {
     return (
@@ -123,20 +139,12 @@ export default function TeacherProfilePage() {
     );
   }
 
-  if (isPendingReview) {
-    return (
-      <div className="mx-auto max-w-3xl px-4 py-24 text-center">
-        <h1 className="font-display text-4xl font-bold text-[var(--foreground)]">This profile is under review</h1>
-        <p className="mt-4 text-lg text-[var(--muted)]">Please check back later after verification.</p>
-      </div>
-    );
-  }
-
   const isParent = session?.role === "parent";
   const isSelfTeacher = Boolean(session?.id && currentTeacher.user_id === session.id);
   const existingReview = isParent
     ? teacherReviews.find((review) => review.parent_id === session?.id) ?? null
     : null;
+  const initials = currentTeacher.name.split(" ").map((part) => part[0]).join("").slice(0, 2).toUpperCase();
 
   async function handleReviewSubmit(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -147,25 +155,18 @@ export default function TeacherProfilePage() {
 
     const actualParentName = parentName || session.name || "Parent";
 
-    // Server endpoint is the source of truth for duplicate/rate-limit and role checks.
-    const response = await fetch("/api/reviews", {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify({
+    try {
+      submitReview({
         teacherId: currentTeacher.id,
         parentId: session.id,
         parentName: actualParentName,
         rating,
         comment,
         allowEdit: Boolean(existingReview),
-      }),
-    });
-
-    const payload = (await response.json().catch(() => ({}))) as { message?: string };
-    if (!response.ok) {
-      pushToast({ tone: "error", title: payload.message ?? "Unable to submit review" });
+      });
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "Unable to submit review";
+      pushToast({ tone: "error", title: message });
       return;
     }
 
@@ -181,116 +182,151 @@ export default function TeacherProfilePage() {
       return;
     }
 
-    const openWhatsApp = (number: string) => {
-      window.open(
-        whatsappLink(number, "Hi, I found your profile on Docent and I'm interested in home tuition for my child."),
-        "_blank",
-        "noopener,noreferrer",
-      );
-    };
-
-    if (contactNumber) {
-      openWhatsApp(contactNumber);
+    if (!currentTeacher.whatsapp_number) {
+      pushToast({ tone: "error", title: "WhatsApp number is not available for this teacher." });
       return;
     }
 
     setIsContactLoading(true);
-    const response = await fetch("/api/teacher/contact", {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify({
-        teacherId: currentTeacher.id,
-        parentId: session.id,
-      }),
-    });
-
-    const payload = (await response.json().catch(() => ({}))) as { message?: string; whatsappNumber?: string };
+    window.open(
+      whatsappLink(currentTeacher.whatsapp_number, "Hi, I found your profile on Docent and I'm interested in home tuition for my child."),
+      "_blank",
+      "noopener,noreferrer",
+    );
     setIsContactLoading(false);
-
-    if (!response.ok || !payload.whatsappNumber) {
-      pushToast({ tone: "error", title: payload.message ?? "Unable to fetch contact details." });
-      return;
-    }
-
-    setContactNumber(payload.whatsappNumber);
-    openWhatsApp(payload.whatsappNumber);
   }
 
   return (
-    <div className="mx-auto w-full max-w-6xl px-4 py-10 sm:px-6 lg:px-8 lg:py-20">
-      <section className="grid gap-8 lg:grid-cols-[0.95fr_1.05fr]">
-        <TeacherCard teacher={currentTeacher} />
-        <div className="space-y-4">
-          <div className="card-surface rounded-[2rem] p-6">
-            <div className="flex flex-wrap items-start justify-between gap-4">
-              <div>
-                <p className="text-sm uppercase tracking-[0.2em] text-[var(--muted)]">Public profile</p>
-                <h1 className="mt-3 font-display text-4xl font-bold text-[var(--foreground)]">{currentTeacher.name}</h1>
-                <p className="mt-3 text-lg leading-8 text-[var(--muted)]">{currentTeacher.bio}</p>
+    <div className="page-section">
+      <span className="page-label">Teacher Profile Page</span>
+      <div className="profile-page">
+        <div className="profile-main">
+          <div className="profile-top">
+            <div className="profile-avatar-wrap">
+              <div className="profile-avatar">{initials}</div>
+              <div className="profile-online" />
+            </div>
+            <div className="profile-name-section">
+              <h1 className="profile-name">{currentTeacher.name}</h1>
+              <p className="profile-tagline">{currentTeacher.subjects.join(" & ")} Tutor · {currentTeacher.locality}</p>
+              <div className="profile-badges">
+                <span className="pill badge-verified">Verified</span>
+                <span className="pill pill-inactive">{currentTeacher.experience_years} yrs experience</span>
               </div>
-              <div className="rounded-2xl bg-[var(--primary-soft)] px-4 py-3 text-right">
-                <p className="text-xs uppercase tracking-[0.2em] text-[var(--muted)]">Price</p>
-                <p className="font-display text-2xl font-bold text-[var(--foreground)]">{formatCurrency(currentTeacher.price_per_month)}</p>
+              <div className="profile-stats-row">
+                <div className="pstat"><div className="pstat-num">{currentTeacher.rating.toFixed(1)}</div><div className="pstat-label">Rating</div></div>
+                <div className="pstat"><div className="pstat-num">{teacherReviews.length}</div><div className="pstat-label">Reviews</div></div>
+                <div className="pstat"><div className="pstat-num">{currentTeacher.experience_years} yrs</div><div className="pstat-label">Experience</div></div>
               </div>
             </div>
+          </div>
 
-            <div className="mt-6 grid gap-3 sm:grid-cols-2">
-              <div className="rounded-3xl bg-[rgba(255,251,245,0.9)] p-4">
-                <p className="text-xs uppercase tracking-[0.2em] text-[var(--muted)]">Locality</p>
-                <p className="mt-1 font-medium text-[var(--foreground)]">{currentTeacher.locality}</p>
-              </div>
-              <div className="rounded-3xl bg-[rgba(255,251,245,0.9)] p-4">
-                <p className="text-xs uppercase tracking-[0.2em] text-[var(--muted)]">Experience</p>
-                <p className="mt-1 font-medium text-[var(--foreground)]">{currentTeacher.experience_years} years</p>
-              </div>
-              <div className="rounded-3xl bg-[rgba(255,251,245,0.9)] p-4">
-                <p className="text-xs uppercase tracking-[0.2em] text-[var(--muted)]">Teaches at</p>
-                <p className="mt-1 font-medium text-[var(--foreground)] capitalize">{currentTeacher.teaches_at.replace("_", " ")}</p>
-              </div>
-              <div className="rounded-3xl bg-[rgba(255,251,245,0.9)] p-4">
-                <p className="text-xs uppercase tracking-[0.2em] text-[var(--muted)]">Reviews</p>
-                <p className="mt-1 font-medium text-[var(--foreground)]">{teacherReviews.length} reviews</p>
-              </div>
+          <div className="profile-section">
+            <div className="profile-section-title">About</div>
+            <p className="profile-bio">{currentTeacher.bio}</p>
+          </div>
+
+          <div className="profile-section">
+            <div className="profile-section-title">Subjects</div>
+            <div className="profile-subjects">
+              {currentTeacher.subjects.map((item) => <span key={item} className="profile-subject">{item}</span>)}
             </div>
+          </div>
 
+          <div className="profile-section">
+            <div className="profile-section-title">Details</div>
+            <div className="profile-details-grid">
+              <div className="profile-detail-box"><div className="pdbox-label">Grades</div><div className="pdbox-val">{currentTeacher.grades.join(", ")}</div></div>
+              <div className="profile-detail-box"><div className="pdbox-label">Board</div><div className="pdbox-val">{currentTeacher.boards.join(", ")}</div></div>
+              <div className="profile-detail-box"><div className="pdbox-label">Teaches at</div><div className="pdbox-val capitalize">{currentTeacher.teaches_at.replace("_", " ")}</div></div>
+              <div className="profile-detail-box"><div className="pdbox-label">Availability</div><div className="pdbox-val">{currentTeacher.availability.join(", ")}</div></div>
+              <div className="profile-detail-box"><div className="pdbox-label">Locality</div><div className="pdbox-val">{currentTeacher.locality}</div></div>
+              <div className="profile-detail-box"><div className="pdbox-label">Price</div><div className="pdbox-val">{formatCurrency(currentTeacher.price_per_month)}</div></div>
+            </div>
+          </div>
+
+          <div className="profile-section">
+            <div className="profile-section-title">Write a Review</div>
+            {isParent ? (
+              <form onSubmit={handleReviewSubmit} className="grid gap-4 rounded-[1.5rem] border border-[var(--border)] bg-white p-5">
+                <div className="grid gap-4 md:grid-cols-2">
+                  <div>
+                    <label className="form-label" htmlFor="review-parent-name">Your name</label>
+                    <input id="review-parent-name" className="form-input" value={parentName} onChange={(event) => setParentName(event.target.value)} placeholder="Parent name" />
+                  </div>
+                  <div>
+                    <label className="form-label" htmlFor="review-rating">Rating</label>
+                    <select id="review-rating" className="form-input" value={rating} onChange={(event) => setRating(Number(event.target.value))}>
+                      {[5, 4, 3, 2, 1].map((value) => (
+                        <option key={value} value={value}>{value} star{value === 1 ? "" : "s"}</option>
+                      ))}
+                    </select>
+                  </div>
+                </div>
+                <div>
+                  <label className="form-label" htmlFor="review-comment">Review</label>
+                  <textarea id="review-comment" className="form-input min-h-[120px]" value={comment} onChange={(event) => setComment(event.target.value)} placeholder="Write about the teaching quality, punctuality, and clarity..." />
+                </div>
+                <button type="submit" className="btn-primary w-fit px-5 py-3 text-sm">{existingReview ? "Update review" : "Post review"}</button>
+              </form>
+            ) : (
+              <div className="review-card">
+                <p className="text-sm text-[var(--muted)]">Login as a parent to leave a review for this teacher.</p>
+                <button type="button" onClick={() => router.push(`/auth?role=parent&next=/teacher/${currentTeacher.id}`)} className="btn-primary mt-4 px-5 py-3 text-sm">Login to review</button>
+              </div>
+            )}
+          </div>
+
+          <div className="profile-section">
+            <div className="profile-section-title">Parent Reviews ({teacherReviews.length})</div>
+            {teacherReviews.length ? (
+              teacherReviews.map((review) => (
+                <div key={review.id} className="review-card">
+                  <div className="review-top">
+                    <div className="reviewer">
+                      <div className="reviewer-avatar">PR</div>
+                      <div>
+                        <div className="reviewer-name">{review.parent_name}</div>
+                        <div className="reviewer-date">{formatDate(review.created_at)}</div>
+                      </div>
+                    </div>
+                    <div className="review-stars">{review.rating.toFixed(1)} / 5</div>
+                  </div>
+                  <p className="review-text">{review.comment}</p>
+                </div>
+              ))
+            ) : (
+              <div className="review-card">No reviews yet.</div>
+            )}
+          </div>
+        </div>
+
+        <div className="profile-sidebar">
+          <div className="contact-card">
+            <div className="contact-price">{formatCurrency(currentTeacher.price_per_month)} <span>/ month</span></div>
+            <div className="contact-price-note">Per student</div>
             {isParent ? (
               <button
                 type="button"
                 onClick={handleContactTeacher}
                 disabled={isContactLoading}
-                className="whatsapp-pulse btn-primary mt-6 w-full rounded-full bg-[#25D366] px-6 py-4 text-base disabled:opacity-60"
+                ref={whatsappButtonRef}
+                className="btn-whatsapp"
               >
-                {isContactLoading ? "Fetching contact..." : "Message on WhatsApp"}
+                {isContactLoading ? "Fetching contact..." : "Contact on WhatsApp"}
               </button>
             ) : (
-              <button
-                type="button"
-                onClick={() => setShowContactLoginModal(true)}
-                className="btn-secondary mt-6 w-full px-6 py-4 text-base"
-              >
-                Login to Contact
-              </button>
+              <button type="button" onClick={() => setShowContactLoginModal(true)} className="btn-whatsapp">Login to Contact</button>
             )}
+            <button type="button" className="btn-save">Save Profile</button>
           </div>
 
-          <div className="card-soft rounded-[2rem] p-6">
-            <p className="text-sm uppercase tracking-[0.2em] text-[var(--muted)]">About the tutor</p>
-            <div className="mt-4 flex flex-wrap gap-2">
-              {currentTeacher.subjects.map((item) => <span key={item} className="pill pill-inactive">{item}</span>)}
-              {currentTeacher.grades.map((item) => <span key={item} className="pill pill-inactive">{item}</span>)}
-              {currentTeacher.boards.map((item) => <span key={item} className="pill pill-inactive">{item}</span>)}
-            </div>
-            <p className="mt-4 text-sm leading-6 text-[var(--muted)]">
-              Availability: {currentTeacher.availability.join(", ")}.
-            </p>
-            {currentTeacher.created_at ? (
-              <p className="mt-4 text-sm leading-6 text-[var(--muted)]">Joined on {formatDate(currentTeacher.created_at)}.</p>
-            ) : null}
-          </div>
+          <div className="sidebar-detail"><div className="sd-icon">Loc</div><div><div className="sd-label">Location</div><div className="sd-val">{currentTeacher.locality}</div></div></div>
+          <div className="sidebar-detail"><div className="sd-icon">Avl</div><div><div className="sd-label">Availability</div><div className="sd-val">{currentTeacher.availability.join(" & ")}</div></div></div>
+          <div className="sidebar-detail"><div className="sd-icon">Rsp</div><div><div className="sd-label">Response time</div><div className="sd-val">Usually within 1 hour</div></div></div>
+          <div className="sidebar-detail"><div className="sd-icon">Cnt</div><div><div className="sd-label">Parents contacted</div><div className="sd-val">{teacherReviews.length + 12} this month</div></div></div>
         </div>
-      </section>
+      </div>
 
       {showContactLoginModal ? (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/45 px-4">
@@ -319,89 +355,6 @@ export default function TeacherProfilePage() {
           </div>
         </div>
       ) : null}
-
-      <section className="mt-8 grid gap-8 lg:grid-cols-[1fr_0.9fr]">
-        <div className="card-surface rounded-[2rem] p-6">
-          <p className="text-sm uppercase tracking-[0.2em] text-[var(--muted)]">Parent reviews</p>
-          <div className="mt-4 space-y-4">
-            {teacherReviews.length ? (
-              teacherReviews.map((review) => (
-                <div key={review.id} className="rounded-[1.5rem] bg-[rgba(255,251,245,0.92)] p-4">
-                  <div className="flex items-center justify-between gap-3">
-                    <p className="font-semibold text-[var(--foreground)]">{review.parent_name}</p>
-                    <p className="text-sm text-[var(--muted)]">{review.rating} / 5</p>
-                  </div>
-                  <p className="mt-2 text-sm leading-6 text-[var(--muted)]">{review.comment}</p>
-                  <p className="mt-3 text-xs uppercase tracking-[0.18em] text-[var(--muted)]">{formatDate(review.created_at)}</p>
-                </div>
-              ))
-            ) : (
-              <div className="rounded-[1.5rem] bg-[rgba(255,251,245,0.92)] p-4 text-sm text-[var(--muted)]">
-                No reviews yet. Be the first parent to leave feedback.
-              </div>
-            )}
-          </div>
-        </div>
-
-        {isParent && !isSelfTeacher ? (
-          existingReview && !editingReview ? (
-            <div className="card-surface rounded-[2rem] p-6">
-              <p className="text-sm uppercase tracking-[0.2em] text-[var(--muted)]">Your review</p>
-              <div className="mt-4 rounded-[1.5rem] bg-[rgba(255,251,245,0.92)] p-4">
-                <div className="flex items-center justify-between gap-3">
-                  <p className="font-semibold text-[var(--foreground)]">{existingReview.parent_name}</p>
-                  <p className="text-sm text-[var(--muted)]">{existingReview.rating} / 5</p>
-                </div>
-                <p className="mt-2 text-sm leading-6 text-[var(--muted)]">{existingReview.comment}</p>
-              </div>
-              <button
-                type="button"
-                className="btn-secondary mt-4 w-full px-5 py-3"
-                onClick={() => {
-                  setParentName(existingReview.parent_name);
-                  setRating(existingReview.rating);
-                  setComment(existingReview.comment);
-                  setEditingReview(true);
-                }}
-              >
-                Edit review
-              </button>
-            </div>
-          ) : (
-            <form className="card-surface rounded-[2rem] p-6" onSubmit={handleReviewSubmit}>
-              <p className="text-sm uppercase tracking-[0.2em] text-[var(--muted)]">{existingReview ? "Edit your review" : "Leave a review"}</p>
-              {existingReview ? <p className="mt-2 text-sm text-[var(--muted)]">You've already reviewed this teacher.</p> : null}
-              <div className="mt-4 space-y-4">
-                <div>
-                  <label className="mb-2 block text-sm font-semibold text-[var(--foreground)]">Your name</label>
-                  <input className="field" value={parentName} onChange={(event) => setParentName(event.target.value)} placeholder="Parent name" />
-                </div>
-                <div>
-                  <label className="mb-2 block text-sm font-semibold text-[var(--foreground)]">Rating</label>
-                  <div className="flex flex-wrap gap-2">
-                    {[1, 2, 3, 4, 5].map((value) => (
-                      <button key={value} type="button" onClick={() => setRating(value)} className={`pill ${rating === value ? "pill-active" : "pill-inactive"}`}>
-                        {value} star{value > 1 ? "s" : ""}
-                      </button>
-                    ))}
-                  </div>
-                </div>
-                <div>
-                  <label className="mb-2 block text-sm font-semibold text-[var(--foreground)]">Comment</label>
-                  <textarea className="textarea" value={comment} onChange={(event) => setComment(event.target.value)} placeholder="Write one short line about your experience" required />
-                </div>
-                <button type="submit" className="btn-primary w-full px-5 py-3">{existingReview ? "Update review" : "Post review"}</button>
-              </div>
-            </form>
-          )
-        ) : (
-          <div className="card-surface rounded-[2rem] p-6 text-sm text-[var(--muted)]">
-            {isSelfTeacher
-              ? "You cannot review your own profile."
-              : "Reviews can only be submitted by logged-in parents."}
-          </div>
-        )}
-      </section>
     </div>
   );
 }

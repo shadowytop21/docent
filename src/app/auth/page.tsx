@@ -1,11 +1,11 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import Image from "next/image";
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import { useToast } from "@/components/toast-provider";
-import { clearSession, findProfileByPhone, getProfilesByPhone, loadAppState, saveSession } from "@/lib/mock-db";
-import { createId } from "@/lib/utils";
+import { clearSession, loadAppState, saveSession, updateProfile } from "@/lib/mock-db";
 
 export default function AuthPage() {
   const router = useRouter();
@@ -16,8 +16,10 @@ export default function AuthPage() {
   const [phone, setPhone] = useState("");
   const [name, setName] = useState("");
   const [email, setEmail] = useState("");
+  const [password, setPassword] = useState("");
   const roleParam = searchParams.get("role");
   const preferredRole: "teacher" | "parent" | null = roleParam === "teacher" || roleParam === "parent" ? roleParam : null;
+  const [selectedRole, setSelectedRole] = useState<"teacher" | "parent">(preferredRole ?? "parent");
   const returnTo = searchParams.get("next");
 
   function resolvePostLoginRoute(role?: "teacher" | "parent") {
@@ -63,55 +65,44 @@ export default function AuthPage() {
   async function handleSubmit(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault();
 
-    const profilesForPhone = getProfilesByPhone(phone);
-    const uniqueRoles = Array.from(new Set(profilesForPhone.map((profile) => profile.role)));
+    const response = await fetch("/api/account/profile", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        email: email.trim(),
+        name: name.trim(),
+        phone: phone.trim(),
+        role: selectedRole,
+      }),
+    });
 
-    if (uniqueRoles.length > 1) {
-      pushToast({
-        tone: "error",
-        title: "This number is already registered. Please login instead.",
-      });
+    const payload = (await response.json().catch(() => ({}))) as { message?: string; userId?: string };
+    if (!response.ok || !payload.userId) {
+      pushToast({ tone: "error", title: payload.message ?? "Account creation failed." });
       return;
     }
 
-    const existingProfile = findProfileByPhone(phone);
-    if (existingProfile?.role) {
-      saveSession({
-        id: existingProfile.id,
-        phone: existingProfile.phone,
-        name: existingProfile.name,
-        email: email.trim() || existingProfile.email || "",
-        role: existingProfile.role,
-      });
+    saveSession({
+      id: payload.userId,
+      phone: phone.trim(),
+      name: name.trim(),
+      email: email.trim(),
+      role: selectedRole,
+    });
 
-      pushToast({ tone: "success", title: "Welcome back" });
-      router.push(resolvePostLoginRoute(existingProfile.role));
-      return;
-    }
+    updateProfile({
+      id: payload.userId,
+      role: selectedRole,
+      name: name.trim(),
+      phone: phone.trim(),
+      email: email.trim(),
+      created_at: new Date().toISOString(),
+    });
 
-    const newSession = {
-      id: createId("session"),
-      phone,
-      name,
-      email,
-      role: preferredRole ?? undefined,
-    };
-    saveSession(newSession);
-
-    if (preferredRole === "teacher") {
-      pushToast({ tone: "success", title: "Signed in", description: "Continue to teacher profile setup." });
-      router.push(returnTo && returnTo.startsWith("/") ? returnTo : "/teacher/setup");
-      return;
-    }
-
-    if (preferredRole === "parent") {
-      pushToast({ tone: "success", title: "Signed in", description: "You can now contact and review teachers." });
-      router.push(resolvePostLoginRoute("parent"));
-      return;
-    }
-
-    pushToast({ tone: "success", title: "Signed in", description: "Your session is ready. Pick a role next." });
-    router.push("/onboarding");
+    pushToast({ tone: "success", title: "Signed in", description: selectedRole === "teacher" ? "Continue to teacher profile setup." : "You can now contact and review teachers." });
+    router.push(selectedRole === "teacher" ? (returnTo && returnTo.startsWith("/") ? returnTo : "/teacher/setup") : resolvePostLoginRoute("parent"));
   }
 
   if (!loaded) {
@@ -119,70 +110,69 @@ export default function AuthPage() {
   }
 
   return (
-    <div className="mx-auto grid w-full max-w-6xl gap-8 px-4 py-10 lg:grid-cols-[1fr_0.9fr] lg:px-8 lg:py-20">
-      <section className="card-surface rounded-[2rem] p-8">
-        <p className="text-sm uppercase tracking-[0.2em] text-[var(--muted)]">Parent and teacher sign up</p>
-        <h1 className="mt-3 font-display text-4xl font-bold text-[var(--foreground)]">Sign up for Docent</h1>
-        <p className="mt-4 max-w-xl text-lg leading-8 text-[var(--muted)]">
-          New users should sign up with their phone number and email. Existing users can continue with the same details.
-        </p>
-
-        {hasSession ? (
-          <div className="mt-6 rounded-2xl bg-[var(--primary-soft)] p-4 text-sm text-[var(--foreground)]">
-            <p>You already have an active session in this browser.</p>
-            <div className="mt-3 flex flex-wrap gap-3">
-              <button type="button" onClick={continueSession} className="btn-primary px-4 py-2 text-xs">
-                Continue current session
-              </button>
-              <button type="button" onClick={signOutCurrentSession} className="btn-secondary px-4 py-2 text-xs">
-                Sign out and switch account
-              </button>
+    <div className="page-section">
+      <span className="page-label">Login / Sign Up</span>
+      <div className="auth-page">
+        <div className="auth-left">
+          <div className="mb-8 flex items-center gap-3">
+            <div className="rounded-lg bg-white/10 p-2">
+              <Image src="/docent-mark-v2.png?v=4" alt="Docent logo" width={22} height={22} priority className="h-[22px] w-[22px] invert" />
             </div>
+            <div className="font-mono text-[15px] tracking-[0.06em] text-white">Docent</div>
           </div>
-        ) : null}
+          <h2 className="auth-headline">The best tutors in<br />Mathura are on<br /><em>Docent.</em></h2>
+          <div className="auth-benefits">
+            <div className="auth-benefit"><div className="auth-benefit-dot" />Verified tutors only</div>
+            <div className="auth-benefit"><div className="auth-benefit-dot" />Filter by locality</div>
+            <div className="auth-benefit"><div className="auth-benefit-dot" />Review before contacting</div>
+            <div className="auth-benefit"><div className="auth-benefit-dot" />Direct WhatsApp contact</div>
+          </div>
+        </div>
 
-        <form className="mt-8 space-y-5" onSubmit={handleSubmit}>
-          <div>
-            <label className="mb-2 block text-sm font-semibold text-[var(--foreground)]">Full name</label>
-            <input className="field" value={name} onChange={(event) => setName(event.target.value)} placeholder="Your name" required />
-          </div>
-          <div>
-            <label className="mb-2 block text-sm font-semibold text-[var(--foreground)]">Phone number</label>
-            <input className="field" value={phone} onChange={(event) => setPhone(event.target.value)} placeholder="+91 98xxxxxx" required />
-          </div>
-          <div>
-            <label className="mb-2 block text-sm font-semibold text-[var(--foreground)]">Email</label>
-            <input className="field" type="email" value={email} onChange={(event) => setEmail(event.target.value)} placeholder="you@example.com" required />
-          </div>
-          <button type="submit" className="btn-primary w-full px-5 py-3">Sign up and continue</button>
-        </form>
-      </section>
+        <div className="auth-right">
+          <h2 className="auth-form-title">Create your account</h2>
+          <p className="auth-form-sub">Free to join. Takes less than 2 minutes.</p>
 
-      <aside className="space-y-4">
-        <div className="card-soft rounded-[2rem] p-6">
-          <p className="text-sm uppercase tracking-[0.2em] text-[var(--muted)]">Need admin access?</p>
-          <div className="mt-4 space-y-3 text-sm leading-6 text-[var(--muted)]">
-            <p>Admin moderation has a separate hidden login page.</p>
-            <Link href="/admin/login" className="btn-secondary px-4 py-2 text-xs">
-              Open admin login
-            </Link>
-          </div>
+          {hasSession ? (
+            <div className="mb-5 rounded-xl bg-[var(--ivory2)] p-3 text-sm text-[var(--navy)]">
+              <p>You already have an active session in this browser.</p>
+              <div className="mt-2 flex gap-2">
+                <button type="button" onClick={continueSession} className="btn-primary px-4 py-2 text-xs">Continue</button>
+                <button type="button" onClick={signOutCurrentSession} className="btn-secondary px-4 py-2 text-xs">Sign out</button>
+              </div>
+            </div>
+          ) : null}
+
+          <form onSubmit={handleSubmit}>
+            <div className="role-toggle">
+              <button type="button" className={`role-btn ${selectedRole === "parent" ? "active" : ""}`} onClick={() => setSelectedRole("parent")}>👨‍👩‍👧 I&apos;m a Parent</button>
+              <button type="button" className={`role-btn ${selectedRole === "teacher" ? "active" : ""}`} onClick={() => setSelectedRole("teacher")}>👨‍🏫 I&apos;m a Teacher</button>
+            </div>
+
+            <div className="form-group">
+              <label className="form-label">Full Name</label>
+              <input className="form-input" value={name} onChange={(event) => setName(event.target.value)} placeholder="e.g. Sunita Sharma" required />
+            </div>
+
+            <div className="form-group">
+              <label className="form-label">Phone Number</label>
+              <input className="form-input" value={phone} onChange={(event) => setPhone(event.target.value)} placeholder="+91 98xxxxxx" required />
+            </div>
+
+            <div className="form-group">
+              <label className="form-label">Email Address</label>
+              <input className="form-input" type="email" value={email} onChange={(event) => setEmail(event.target.value)} placeholder="your@email.com" required />
+            </div>
+
+            <div className="form-group">
+              <label className="form-label">Password</label>
+              <input className="form-input" type="password" value={password} onChange={(event) => setPassword(event.target.value)} placeholder="Min. 8 characters" required />
+            </div>
+
+            <button type="submit" className="btn-primary mt-2 w-full rounded-xl py-3 text-sm">Create Account</button>
+          </form>
         </div>
-        <div className="card-soft rounded-[2rem] p-6">
-          <p className="text-sm uppercase tracking-[0.2em] text-[var(--muted)]">Why this flow works</p>
-          <div className="mt-4 space-y-3 text-sm leading-6 text-[var(--muted)]">
-            <p>Simple verification keeps the parent and teacher flows lightweight.</p>
-            <p>The next screen asks for role so each user sees a focused experience.</p>
-            <p>Teacher profile creation and parent browsing both stay tied to the same local session.</p>
-          </div>
-        </div>
-        <div className="card-surface rounded-[2rem] p-6">
-          <p className="font-display text-2xl font-bold text-[var(--foreground)]">A cleaner first impression</p>
-          <p className="mt-3 text-sm leading-6 text-[var(--muted)]">
-            Docent feels like a funded startup: warm, polished, and built to turn a local search into a real conversation.
-          </p>
-        </div>
-      </aside>
+      </div>
     </div>
   );
 }

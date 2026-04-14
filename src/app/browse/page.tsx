@@ -18,7 +18,7 @@ import {
 import { loadAppState } from "@/lib/mock-db";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 
-const categoryChips = ["All", ...teacherSubjects.slice(0, 6)];
+const categoryChips = ["All", ...teacherSubjects];
 const PAGE_SIZE = 12;
 
 export default function BrowsePage() {
@@ -127,6 +127,35 @@ export default function BrowsePage() {
   }, [availability, board, currentPage, grade, locality, priceMax, query, subject]);
 
   useEffect(() => {
+    if (!("IntersectionObserver" in window)) {
+      return;
+    }
+
+    const cards = Array.from(document.querySelectorAll(".teacher-card"));
+    if (!cards.length) {
+      return;
+    }
+
+    const revealObs = new IntersectionObserver((entries) => {
+      entries.forEach((entry) => {
+        if (entry.isIntersecting) {
+          (entry.target as HTMLElement).style.animationPlayState = "running";
+          revealObs.unobserve(entry.target);
+        }
+      });
+    }, { threshold: 0.1 });
+
+    cards.forEach((card) => {
+      (card as HTMLElement).style.animationPlayState = "paused";
+      revealObs.observe(card);
+    });
+
+    return () => {
+      revealObs.disconnect();
+    };
+  }, [catalogLoaded, currentPage]);
+
+  useEffect(() => {
     const current = new URLSearchParams(searchParams.toString());
     if (query) current.set("q", query); else current.delete("q");
     if (subject) current.set("subject", subject); else current.delete("subject");
@@ -164,6 +193,25 @@ export default function BrowsePage() {
   const teachers = remoteTeachers ?? localVisible;
   const totalCount = remoteTeachers !== null ? remoteTotal : localTeachers.length;
   const hasMore = teachers.length < totalCount;
+  const catalogPool = fallbackSnapshot.teachers ?? [];
+
+  const counts = useMemo(() => {
+    const subjectMap = new Map<string, number>();
+    const gradeMap = new Map<string, number>();
+    const localityMap = new Map<string, number>();
+    const boardMap = new Map<string, number>();
+    const availabilityMap = new Map<string, number>();
+
+    catalogPool.forEach((teacher) => {
+      teacher.subjects.forEach((value) => subjectMap.set(value, (subjectMap.get(value) ?? 0) + 1));
+      teacher.grades.forEach((value) => gradeMap.set(value, (gradeMap.get(value) ?? 0) + 1));
+      localityMap.set(teacher.locality, (localityMap.get(teacher.locality) ?? 0) + 1);
+      teacher.boards.forEach((value) => boardMap.set(value, (boardMap.get(value) ?? 0) + 1));
+      teacher.availability.forEach((value) => availabilityMap.set(value, (availabilityMap.get(value) ?? 0) + 1));
+    });
+
+    return { subjectMap, gradeMap, localityMap, boardMap, availabilityMap };
+  }, [catalogPool]);
 
   function resetFilters() {
     setQuery("");
@@ -188,98 +236,116 @@ export default function BrowsePage() {
     <div className="mx-auto w-full max-w-7xl px-4 py-10 sm:px-6 lg:px-8 lg:py-20">
       {!catalogLoaded ? (
         <section className="card-surface rounded-[2rem] p-10 text-center text-[var(--muted)]">
-          Loading shared experts...
+          Loading shared teachers...
         </section>
       ) : null}
 
-      <section className="card-surface rounded-[2rem] p-6 lg:p-8">
-        <div className="flex flex-col gap-6 lg:flex-row lg:items-end lg:justify-between">
-          <div>
-            <p className="text-sm uppercase tracking-[0.2em] text-[var(--muted)]">Browse Experts</p>
-            <h1 className="mt-3 font-display text-4xl font-bold text-[var(--foreground)]">Find experts in your area</h1>
-            <p className="mt-4 max-w-2xl text-lg leading-8 text-[var(--muted)]">
-              Search by service, locality, availability, and budget. Verified experts appear first.
-            </p>
-          </div>
-          <JoinAsTeacherAction className="btn-primary px-6 py-3 text-sm">
-            Join as Expert
-          </JoinAsTeacherAction>
+      <section className="card-surface overflow-hidden rounded-[1rem]">
+        <div className="browse-hero">
+          <h1 className="browse-title">Find tutors in <em>Mathura</em></h1>
+          <p className="browse-sub">{totalCount} verified teachers · Filter by subject, grade, locality and more</p>
         </div>
 
-        <div className="mt-8 grid gap-4 lg:grid-cols-[1.2fr_0.8fr]">
-          <div className="rounded-[1.5rem] bg-[rgba(255,251,245,0.92)] p-4">
-            <label className="mb-2 block text-sm font-semibold text-[var(--foreground)]">Search</label>
-            <input className="field" value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Tutors, electricians, locality..." />
-          </div>
-          <div className="rounded-[1.5rem] bg-[rgba(255,251,245,0.92)] p-4">
-            <label className="mb-2 block text-sm font-semibold text-[var(--foreground)]">Price max: ₹{priceMax}</label>
-            <input className="w-full accent-[var(--primary)]" type="range" min="0" max="5000" step="100" value={priceMax} onChange={(event) => setPriceMax(Number(event.target.value))} />
-          </div>
-        </div>
-
-        <div className="mt-5 flex flex-wrap gap-2">
+        <div className="flex flex-wrap items-center gap-3 border-b border-[var(--border)] bg-white px-6 py-5 lg:px-8">
           {categoryChips.map((item) => (
-            <button key={item} type="button" onClick={() => applyCategory(item)} className={`pill ${subject === item || (item === "All" && !subject) ? "pill-active" : "pill-inactive"}`}>
+            <button key={item} type="button" onClick={() => applyCategory(item)} className={`filter-pill ${subject === item || (item === "All" && !subject) ? "active" : ""}`}>
               {item}
             </button>
           ))}
+          <div className="ml-auto text-sm text-[var(--muted)]">Sort by: <strong className="text-[var(--navy)]">Best Match</strong></div>
         </div>
 
-        <div className="mt-5 grid gap-3 lg:grid-cols-5">
-          <select className="select" value={subject} onChange={(event) => setSubject(event.target.value)}>
-            <option value="">Subject</option>
-            {subjectOptions.map((value) => (
-              <option key={value} value={value}>{value}</option>
-            ))}
-          </select>
-          <select className="select" value={grade} onChange={(event) => setGrade(event.target.value)}>
-            <option value="">Grade</option>
-            {gradeOptions.map((value) => (
-              <option key={value} value={value}>{value}</option>
-            ))}
-          </select>
-          <select className="select" value={locality} onChange={(event) => setLocality(event.target.value)}>
-            <option value="">Locality</option>
-            {localityOptions.map((value) => (
-              <option key={value} value={value}>{value}</option>
-            ))}
-          </select>
-          <select className="select" value={board} onChange={(event) => setBoard(event.target.value)}>
-            <option value="">Board</option>
-            {boardOptions.map((value) => (
-              <option key={value} value={value}>{value}</option>
-            ))}
-          </select>
-          <select className="select" value={availability} onChange={(event) => setAvailability(event.target.value)}>
-            <option value="">Availability</option>
-            {availabilityOptions.map((value) => (
-              <option key={value} value={value}>{value}</option>
-            ))}
-          </select>
-        </div>
-
-        <div className="mt-6 flex flex-wrap items-center justify-between gap-3 border-t border-[var(--border)] pt-4 text-sm text-[var(--muted)]">
-          <p>{totalCount} experts found</p>
-          <button type="button" onClick={resetFilters} className="btn-ghost px-4 py-2 text-sm font-semibold">
-            Clear all filters
-          </button>
-        </div>
-      </section>
-
-      <section className="mt-8 grid gap-6 xl:grid-cols-3">
-        {teachers.length ? (
-          teachers.map((teacher) => <TeacherCard key={teacher.id} teacher={teacher} />)
-        ) : (
-          <div className="card-surface col-span-full rounded-[2rem] p-10 text-center">
-            <div className="mx-auto flex h-20 w-20 items-center justify-center rounded-full bg-[var(--primary-soft)] text-3xl">🌿</div>
-            <h2 className="mt-4 font-display text-3xl font-bold text-[var(--foreground)]">No experts found for these filters. Try adjusting your search.</h2>
-            <p className="mt-3 text-lg leading-8 text-[var(--muted)]">You can broaden category, locality, or price to discover more results.</p>
-            <div className="mt-6 flex justify-center gap-3">
-              <button type="button" onClick={resetFilters} className="btn-primary px-6 py-3 text-sm">Clear all filters</button>
-              <JoinAsTeacherAction className="btn-secondary px-6 py-3 text-sm">Add an expert profile</JoinAsTeacherAction>
+        <div className="grid min-h-[600px] lg:grid-cols-[280px_1fr]">
+          <aside className="border-r border-[var(--border)] bg-white p-8">
+            <div className="mb-7">
+              <p className="mb-4 font-mono text-[10px] uppercase tracking-[0.14em] text-[var(--muted)]">Search</p>
+              <input className="field" value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Tutors, locality..." />
             </div>
-          </div>
-        )}
+
+            <div className="mb-7">
+              <p className="mb-4 font-mono text-[10px] uppercase tracking-[0.14em] text-[var(--muted)]">Subject</p>
+              <div className="flex flex-col gap-2">
+                {subjectOptions.map((value) => (
+                  <button key={value} type="button" onClick={() => setSubject(subject === value ? "" : value)} className={`filter-option ${subject === value ? "selected" : ""}`}>
+                    <span>{value}</span>
+                    <span className="filter-count">{counts.subjectMap.get(value) ?? 0}</span>
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            <div className="mb-7">
+              <p className="mb-4 font-mono text-[10px] uppercase tracking-[0.14em] text-[var(--muted)]">Grade</p>
+              <div className="flex flex-col gap-2">
+                {gradeOptions.map((value) => (
+                  <button key={value} type="button" onClick={() => setGrade(grade === value ? "" : value)} className={`filter-option ${grade === value ? "selected" : ""}`}>
+                    <span>{value}</span>
+                    <span className="filter-count">{counts.gradeMap.get(value) ?? 0}</span>
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            <div className="mb-7">
+              <p className="mb-4 font-mono text-[10px] uppercase tracking-[0.14em] text-[var(--muted)]">Locality</p>
+              <div className="flex flex-col gap-2">
+                {localityOptions.map((value) => (
+                  <button key={value} type="button" onClick={() => setLocality(locality === value ? "" : value)} className={`filter-option ${locality === value ? "selected" : ""}`}>
+                    <span>{value}</span>
+                    <span className="filter-count">{counts.localityMap.get(value) ?? 0}</span>
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            <div className="mb-7">
+              <p className="mb-4 font-mono text-[10px] uppercase tracking-[0.14em] text-[var(--muted)]">Board</p>
+              <div className="flex flex-col gap-2">
+                {boardOptions.map((value) => (
+                  <button key={value} type="button" onClick={() => setBoard(board === value ? "" : value)} className={`filter-option ${board === value ? "selected" : ""}`}>
+                    <span>{value}</span>
+                    <span className="filter-count">{counts.boardMap.get(value) ?? 0}</span>
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            <div className="mb-7">
+              <p className="mb-4 font-mono text-[10px] uppercase tracking-[0.14em] text-[var(--muted)]">Availability</p>
+              <div className="flex flex-col gap-2">
+                {availabilityOptions.map((value) => (
+                  <button key={value} type="button" onClick={() => setAvailability(availability === value ? "" : value)} className={`filter-option ${availability === value ? "selected" : ""}`}>
+                    <span>{value}</span>
+                    <span className="filter-count">{counts.availabilityMap.get(value) ?? 0}</span>
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            <div>
+              <p className="mb-3 font-mono text-[10px] uppercase tracking-[0.14em] text-[var(--muted)]">Price range</p>
+              <label className="mb-2 block text-sm text-[var(--muted)]">Max: ₹{priceMax}</label>
+              <input className="w-full accent-[var(--saffron)]" type="range" min="0" max="5000" step="100" value={priceMax} onChange={(event) => setPriceMax(Number(event.target.value))} />
+            </div>
+
+            <button type="button" onClick={resetFilters} className="btn-secondary mt-6 w-full px-4 py-3 text-sm">Clear all filters</button>
+          </aside>
+
+          <section className="teacher-grid">
+            {teachers.length ? (
+              teachers.map((teacher) => <TeacherCard key={teacher.id} teacher={teacher} />)
+            ) : (
+              <div className="card-surface col-span-full rounded-[1rem] p-10 text-center">
+                <h2 className="font-display text-3xl font-medium text-[var(--foreground)]">No teachers found for these filters.</h2>
+                <p className="mt-3 text-base text-[var(--muted)]">Try adjusting your subject, locality, or price range.</p>
+                <div className="mt-6 flex justify-center gap-3">
+                  <button type="button" onClick={resetFilters} className="btn-primary px-6 py-3 text-sm">Clear all filters</button>
+                  <JoinAsTeacherAction className="btn-secondary px-6 py-3 text-sm">Add a teacher profile</JoinAsTeacherAction>
+                </div>
+              </div>
+            )}
+          </section>
+        </div>
       </section>
 
       {teachers.length && hasMore ? (

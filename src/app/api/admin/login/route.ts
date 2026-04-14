@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { timingSafeEqual } from "node:crypto";
 import {
   ADMIN_SESSION_COOKIE,
   createAdminSessionToken,
@@ -6,6 +7,16 @@ import {
 } from "@/lib/admin-session";
 import { logAdminAuditEvent } from "@/lib/admin-audit";
 import { checkRateLimit, getRequestIp } from "@/lib/rate-limit";
+
+function safeEqual(left: string, right: string) {
+  const leftBuffer = Buffer.from(left, "utf8");
+  const rightBuffer = Buffer.from(right, "utf8");
+  if (leftBuffer.length !== rightBuffer.length) {
+    return false;
+  }
+
+  return timingSafeEqual(leftBuffer, rightBuffer);
+}
 
 export async function POST(request: Request) {
   const ip = getRequestIp(request);
@@ -34,8 +45,8 @@ export async function POST(request: Request) {
   const normalizedAdminEmail = adminEmail.trim().toLowerCase();
   const normalizedAdminPassword = adminPassword.replace(/\r?\n/g, "").trim();
 
-  const validEmail = email === normalizedAdminEmail;
-  const validPassword = password === normalizedAdminPassword;
+  const validEmail = safeEqual(email, normalizedAdminEmail);
+  const validPassword = safeEqual(password, normalizedAdminPassword);
 
   if (!validEmail || !validPassword) {
     await logAdminAuditEvent("admin.login.failed", email || "unknown", { ip });

@@ -4,8 +4,14 @@ import { useCallback, useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { useToast } from "@/components/toast-provider";
 import type { AppSnapshot } from "@/lib/mock-db";
-import { deleteReviewById, loadAppState, setTeacherStatus, toggleFoundingMember } from "@/lib/mock-db";
-import { formatCurrency, formatDate } from "@/lib/utils";
+import {
+  defaultHomepageShowcaseConfig,
+  loadAppState,
+  loadHomepageShowcaseConfig,
+  saveHomepageShowcaseConfig,
+  setTeacherStatus,
+  type HomepageShowcaseConfig,
+} from "@/lib/mock-db";
 
 export function AdminPanel() {
   const router = useRouter();
@@ -17,6 +23,7 @@ export function AdminPanel() {
     session: null,
   });
   const [isRemoteData, setIsRemoteData] = useState(false);
+  const [showcaseConfig, setShowcaseConfig] = useState<HomepageShowcaseConfig>(defaultHomepageShowcaseConfig);
 
   const loadModerationSnapshot = useCallback(async () => {
     const response = await fetch("/api/admin/moderation", { cache: "no-store" });
@@ -39,6 +46,7 @@ export function AdminPanel() {
 
   useEffect(() => {
     loadModerationSnapshot();
+    setShowcaseConfig(loadHomepageShowcaseConfig());
   }, [loadModerationSnapshot]);
 
   async function logoutAdmin() {
@@ -96,53 +104,6 @@ export function AdminPanel() {
     pushToast({ tone: "warning", title: "Teacher rejected" });
   }
 
-  async function toggleFounder(teacherId: string) {
-    if (!isRemoteData) {
-      toggleFoundingMember(teacherId);
-      setSnapshot(loadAppState());
-      pushToast({ tone: "success", title: "Founding badge updated" });
-      return;
-    }
-
-    const current = snapshot.teachers.find((teacher) => teacher.id === teacherId);
-    const response = await fetch(`/api/admin/teachers/${teacherId}`, {
-      method: "PATCH",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ is_founding_member: !current?.is_founding_member }),
-    });
-
-    if (!response.ok) {
-      const payload = (await response.json().catch(() => ({}))) as { message?: string };
-      pushToast({ tone: "error", title: payload.message ?? "Update failed." });
-      return;
-    }
-
-    await loadModerationSnapshot();
-    pushToast({ tone: "success", title: "Founding badge updated" });
-  }
-
-  async function removeReview(reviewId: string) {
-    if (!isRemoteData) {
-      deleteReviewById(reviewId);
-      setSnapshot(loadAppState());
-      pushToast({ tone: "success", title: "Review deleted" });
-      return;
-    }
-
-    const response = await fetch(`/api/admin/reviews/${reviewId}`, {
-      method: "DELETE",
-    });
-
-    if (!response.ok) {
-      const payload = (await response.json().catch(() => ({}))) as { message?: string };
-      pushToast({ tone: "error", title: payload.message ?? "Delete failed." });
-      return;
-    }
-
-    await loadModerationSnapshot();
-    pushToast({ tone: "success", title: "Review deleted" });
-  }
-
   const stats = {
     totalTeachers: snapshot.teachers.length,
     pendingTeachers: snapshot.teachers.filter((teacher) => teacher.status === "pending").length,
@@ -150,145 +111,124 @@ export function AdminPanel() {
     totalParents: snapshot.profiles.filter((profile) => profile.role === "parent").length,
   };
 
+  const pendingTeachers = snapshot.teachers.filter((teacher) => teacher.status === "pending");
+
+  function updateShowcaseCard(index: number, key: "initials" | "name" | "locality" | "price" | "rating" | "tags", value: string) {
+    setShowcaseConfig((prev) => {
+      const cards = [...prev.cards];
+      const target = { ...cards[index] };
+
+      if (key === "tags") {
+        target.tags = value.split(",").map((item) => item.trim()).filter(Boolean).slice(0, 3);
+      } else if (key === "price") {
+        target.price = Number(value || 0);
+      } else if (key === "rating") {
+        target.rating = Number(value || 0);
+      } else if (key === "initials") {
+        target.initials = value.toUpperCase().slice(0, 2);
+      } else {
+        target[key] = value;
+      }
+
+      cards[index] = target;
+      return { ...prev, cards };
+    });
+  }
+
+  function updateShowcaseStat(index: number, key: "label" | "value", value: string) {
+    setShowcaseConfig((prev) => {
+      const stats = [...prev.stats];
+      stats[index] = { ...stats[index], [key]: value };
+      return { ...prev, stats };
+    });
+  }
+
+  function saveShowcase() {
+    saveHomepageShowcaseConfig(showcaseConfig);
+    pushToast({ tone: "success", title: "Homepage featured panel updated" });
+  }
+
   return (
-    <div className="mx-auto w-full max-w-7xl px-4 py-10 sm:px-6 lg:px-8 lg:py-16">
-      <div className="card-surface rounded-[2rem] p-6 lg:p-8">
-        <div className="flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
-          <div>
-            <p className="text-sm uppercase tracking-[0.2em] text-[var(--muted)]">Admin panel</p>
-            <h1 className="mt-3 font-display text-4xl font-bold text-[var(--foreground)]">Docent moderation</h1>
-            <p className="mt-4 max-w-2xl text-lg leading-8 text-[var(--muted)]">Approve teachers, reject incomplete submissions, and manage the founding member badge.</p>
-            <p className="mt-3 text-sm text-[var(--muted)]">Data source: {isRemoteData ? "Supabase (shared across devices)" : "Local browser storage"}</p>
+    <div className="page-section">
+      <span className="page-label">Admin Panel</span>
+      <div className="admin-page">
+        <div className="admin-header">
+          <div className="admin-title">Docent Admin</div>
+          <div className="flex items-center gap-2">
+            <div className="admin-badge">ADMIN</div>
+            <button type="button" onClick={logoutAdmin} className="btn-outline px-3 py-1 text-xs">Logout</button>
           </div>
-          <button type="button" onClick={logoutAdmin} className="btn-secondary px-5 py-3 text-sm">Logout admin</button>
         </div>
 
-        <div className="mt-8 grid gap-4 md:grid-cols-2 xl:grid-cols-4">
-          <Stat label="Total teachers" value={stats.totalTeachers} />
-          <Stat label="Pending" value={stats.pendingTeachers} />
-          <Stat label="Verified" value={stats.verifiedTeachers} />
-          <Stat label="Parents" value={stats.totalParents} />
+        <div className="admin-stats">
+          <div className="admin-stat"><div className="admin-stat-num">{stats.totalTeachers}</div><div className="admin-stat-label">Total Teachers</div></div>
+          <div className="admin-stat"><div className="admin-stat-num text-[var(--saffron)]">{stats.pendingTeachers}</div><div className="admin-stat-label">Pending Verification</div></div>
+          <div className="admin-stat"><div className="admin-stat-num text-[var(--green)]">{stats.verifiedTeachers}</div><div className="admin-stat-label">Verified Teachers</div></div>
+          <div className="admin-stat"><div className="admin-stat-num">{stats.totalParents}</div><div className="admin-stat-label">Total Parents</div></div>
         </div>
 
-        <section className="mt-10 grid gap-6 xl:grid-cols-[0.95fr_1.05fr]">
-          <div className="card-soft rounded-[2rem] p-6">
-            <p className="text-sm uppercase tracking-[0.2em] text-[var(--muted)]">Pending teachers</p>
-            <div className="mt-5 space-y-4">
-              {snapshot.teachers.filter((teacher) => teacher.status === "pending").length ? (
-                snapshot.teachers.filter((teacher) => teacher.status === "pending").map((teacher) => (
-                  <div key={teacher.id} className="rounded-[1.5rem] bg-[rgba(255,251,245,0.92)] p-4">
-                    <div className="flex items-start justify-between gap-3">
-                      <div>
-                        <p className="font-display text-2xl font-bold text-[var(--foreground)]">{teacher.name}</p>
-                        <p className="mt-1 text-sm text-[var(--muted)]">{teacher.locality} · {teacher.experience_years} years</p>
-                      </div>
-                      <span className="pill badge-pending">{teacher.is_resubmission ? "Re-submission" : "Pending"}</span>
-                    </div>
-                    <p className="mt-3 text-sm leading-6 text-[var(--muted)]">{teacher.bio}</p>
-                    <div className="mt-4 flex flex-wrap gap-2 text-xs text-[var(--muted)]">
-                      <span className="pill pill-inactive">{formatCurrency(teacher.price_per_month)}</span>
-                      {teacher.subjects.slice(0, 3).map((subject) => <span key={subject} className="pill pill-inactive">{subject}</span>)}
-                    </div>
-                    <div className="mt-4 flex gap-3">
-                      <button type="button" onClick={() => approveTeacher(teacher.id)} className="btn-primary flex-1 px-4 py-3 text-sm">Approve</button>
-                      <button type="button" onClick={() => rejectTeacher(teacher.id)} className="btn-secondary flex-1 px-4 py-3 text-sm">Reject</button>
+        <div className="admin-table-section">
+          <div className="admin-table-title">Pending Verification Requests</div>
+          <div className="admin-table">
+            <div className="admin-table-row admin-table-head">
+              <span>Teacher</span>
+              <span>Subjects</span>
+              <span>Locality</span>
+              <span>Status</span>
+              <span>Actions</span>
+            </div>
+
+            {(pendingTeachers.length ? pendingTeachers : snapshot.teachers.slice(0, 3)).map((teacher) => (
+              <div key={teacher.id} className="admin-table-row">
+                <div>
+                  <div className="admin-teacher-name">{teacher.name}</div>
+                  <div className="admin-teacher-sub">{teacher.bio.slice(0, 62)}{teacher.bio.length > 62 ? "..." : ""}</div>
+                </div>
+                <div className="text-[13px] text-[var(--navy)]">{teacher.subjects.join(", ")}</div>
+                <div className="text-[13px] text-[var(--navy)]">{teacher.locality}</div>
+                <span className={`status-badge ${teacher.status === "verified" ? "status-verified" : "status-pending"}`}>{teacher.status === "verified" ? "Verified" : "Pending"}</span>
+                <div className="admin-actions">
+                  <button type="button" onClick={() => approveTeacher(teacher.id)} className="btn-approve">Verify</button>
+                  <button type="button" onClick={() => rejectTeacher(teacher.id)} className="btn-reject">Reject</button>
+                </div>
+              </div>
+            ))}
+          </div>
+          <p className="mt-4 text-xs text-[var(--muted)]">Data source: {isRemoteData ? "Supabase" : "Local browser storage"}</p>
+
+          <div className="mt-8 rounded-2xl border border-[var(--border)] bg-white p-5">
+            <p className="admin-table-title mb-4">Homepage Featured Panel Editor</p>
+            <div className="grid gap-6 lg:grid-cols-2">
+              {showcaseConfig.cards.map((card, index) => (
+                <div key={`${card.name}-${index}`} className="rounded-xl border border-[var(--border)] bg-[var(--ivory)] p-4">
+                  <p className="mb-3 text-sm font-semibold text-[var(--navy)]">Card {index + 1}</p>
+                  <div className="grid gap-2">
+                    <input className="form-input" value={card.initials} onChange={(e) => updateShowcaseCard(index, "initials", e.target.value)} placeholder="Initials" />
+                    <input className="form-input" value={card.name} onChange={(e) => updateShowcaseCard(index, "name", e.target.value)} placeholder="Name" />
+                    <input className="form-input" value={card.locality} onChange={(e) => updateShowcaseCard(index, "locality", e.target.value)} placeholder="Locality" />
+                    <input className="form-input" value={card.tags.join(", ")} onChange={(e) => updateShowcaseCard(index, "tags", e.target.value)} placeholder="Tags (comma separated)" />
+                    <div className="grid grid-cols-2 gap-2">
+                      <input className="form-input" type="number" value={card.price} onChange={(e) => updateShowcaseCard(index, "price", e.target.value)} placeholder="Price" />
+                      <input className="form-input" type="number" step="0.1" min="0" max="5" value={card.rating} onChange={(e) => updateShowcaseCard(index, "rating", e.target.value)} placeholder="Rating" />
                     </div>
                   </div>
-                ))
-              ) : (
-                <div className="rounded-[1.5rem] bg-[rgba(255,251,245,0.92)] p-5 text-sm text-[var(--muted)]">No pending teachers right now.</div>
-              )}
+                </div>
+              ))}
             </div>
-          </div>
 
-          <div className="card-soft rounded-[2rem] p-6">
-            <p className="text-sm uppercase tracking-[0.2em] text-[var(--muted)]">All teachers</p>
-            <div className="mt-5 overflow-hidden rounded-[1.5rem] border border-[var(--border)] bg-white">
-              <table className="w-full text-left text-sm">
-                <thead className="bg-[rgba(255,251,245,0.92)] text-[var(--muted)]">
-                  <tr>
-                    <th className="px-4 py-3">Name</th>
-                    <th className="px-4 py-3">Status</th>
-                    <th className="px-4 py-3">Founding</th>
-                    <th className="px-4 py-3">Action</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {snapshot.teachers.map((teacher) => (
-                    <tr key={teacher.id} className="border-t border-[var(--border)]">
-                      <td className="px-4 py-3 font-medium text-[var(--foreground)]">{teacher.name}</td>
-                      <td className="px-4 py-3 capitalize text-[var(--muted)]">{teacher.status}</td>
-                      <td className="px-4 py-3 text-[var(--muted)]">{teacher.is_founding_member ? "Yes" : "No"}</td>
-                      <td className="px-4 py-3">
-                        <button type="button" onClick={() => toggleFounder(teacher.id)} className="btn-ghost px-3 py-2 text-xs font-semibold">
-                          Toggle
-                        </button>
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
+            <div className="mt-5 grid gap-3 md:grid-cols-3">
+              {showcaseConfig.stats.map((stat, index) => (
+                <div key={`${stat.label}-${index}`} className="rounded-xl border border-[var(--border)] bg-[var(--ivory)] p-4">
+                  <input className="form-input mb-2" value={stat.label} onChange={(e) => updateShowcaseStat(index, "label", e.target.value)} placeholder="Label" />
+                  <input className="form-input" value={stat.value} onChange={(e) => updateShowcaseStat(index, "value", e.target.value)} placeholder="Value" />
+                </div>
+              ))}
             </div>
-          </div>
-        </section>
 
-        <section className="mt-8 card-soft rounded-[2rem] p-6">
-          <p className="text-sm uppercase tracking-[0.2em] text-[var(--muted)]">Reviews</p>
-          <div className="mt-5 overflow-hidden rounded-[1.5rem] border border-[var(--border)] bg-white">
-            <table className="w-full text-left text-sm">
-              <thead className="bg-[rgba(255,251,245,0.92)] text-[var(--muted)]">
-                <tr>
-                  <th className="px-4 py-3">Reviewer</th>
-                  <th className="px-4 py-3">Teacher</th>
-                  <th className="px-4 py-3">Rating</th>
-                  <th className="px-4 py-3">Comment</th>
-                  <th className="px-4 py-3">Date</th>
-                  <th className="px-4 py-3">Action</th>
-                </tr>
-              </thead>
-              <tbody>
-                {snapshot.reviews.length ? (
-                  snapshot.reviews.map((review) => {
-                    const teacher = snapshot.teachers.find((entry) => entry.id === review.teacher_id);
-
-                    return (
-                      <tr key={review.id} className="border-t border-[var(--border)] align-top">
-                        <td className="px-4 py-3 font-medium text-[var(--foreground)]">{review.parent_name}</td>
-                        <td className="px-4 py-3 text-[var(--muted)]">{teacher?.name ?? "Unknown"}</td>
-                        <td className="px-4 py-3 text-[var(--muted)]">{review.rating} / 5</td>
-                        <td className="px-4 py-3 text-[var(--muted)]">{review.comment}</td>
-                        <td className="px-4 py-3 text-[var(--muted)]">{formatDate(review.created_at)}</td>
-                        <td className="px-4 py-3">
-                          <button
-                            type="button"
-                            onClick={() => removeReview(review.id)}
-                            className="btn-secondary px-3 py-2 text-xs font-semibold"
-                          >
-                            Delete
-                          </button>
-                        </td>
-                      </tr>
-                    );
-                  })
-                ) : (
-                  <tr>
-                    <td className="px-4 py-4 text-[var(--muted)]" colSpan={6}>No reviews available.</td>
-                  </tr>
-                )}
-              </tbody>
-            </table>
+            <button type="button" onClick={saveShowcase} className="btn-fill mt-5">Save Homepage Panel</button>
           </div>
-        </section>
+        </div>
       </div>
-    </div>
-  );
-}
-
-function Stat({ label, value }: { label: string; value: number }) {
-  return (
-    <div className="rounded-[1.5rem] bg-[rgba(255,251,245,0.92)] p-5">
-      <p className="text-xs uppercase tracking-[0.2em] text-[var(--muted)]">{label}</p>
-      <p className="mt-2 font-display text-4xl font-bold text-[var(--foreground)]">{value}</p>
     </div>
   );
 }

@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { getSupabaseServiceClient } from "@/lib/supabase-server";
+import { checkRateLimit, getRequestIp } from "@/lib/rate-limit";
 
 type ProfileRequest = {
   email?: string;
@@ -40,9 +41,36 @@ async function getOrCreateUserId(email: string, name: string, phone: string) {
 
 export async function POST(request: Request) {
   try {
+    const ip = getRequestIp(request);
+    const rateLimit = checkRateLimit(`account-profile:${ip}`, 10, 10 * 60 * 1000);
+    if (!rateLimit.allowed) {
+      return NextResponse.json({ message: "Too many account attempts. Please try again later." }, { status: 429 });
+    }
+
     const payload = (await request.json().catch(() => null)) as ProfileRequest | null;
     if (!payload?.email || !payload?.name || !payload?.phone || !payload?.role) {
       return NextResponse.json({ message: "Missing profile fields." }, { status: 400 });
+    }
+
+    const email = payload.email.trim().toLowerCase();
+    const name = payload.name.trim();
+    const role = payload.role === "teacher" ? "teacher" : payload.role === "parent" ? "parent" : null;
+    const phone = payload.phone.trim().replace(/[^+0-9]/g, "");
+
+    if (!role) {
+      return NextResponse.json({ message: "Invalid role value." }, { status: 400 });
+    }
+
+    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email) || email.length > 120) {
+      return NextResponse.json({ message: "Invalid email address." }, { status: 400 });
+    }
+
+    if (name.length < 2 || name.length > 80) {
+      return NextResponse.json({ message: "Name must be between 2 and 80 characters." }, { status: 400 });
+    }
+
+    if (phone.length < 8 || phone.length > 16) {
+      return NextResponse.json({ message: "Invalid phone number." }, { status: 400 });
     }
 
     const supabase = getSupabaseServiceClient();
@@ -52,7 +80,7 @@ export async function POST(request: Request) {
 
     const adminSupabase = supabase as any;
 
-    const userResult = await getOrCreateUserId(payload.email, payload.name, payload.phone);
+    const userResult = await getOrCreateUserId(email, name, phone);
     if (userResult.error || !userResult.userId) {
       return NextResponse.json({ message: userResult.error ?? "Unable to create user." }, { status: 500 });
     }
@@ -61,9 +89,9 @@ export async function POST(request: Request) {
     const { error: profileError } = await adminSupabase.from("profiles").upsert(
       {
         id: userResult.userId,
-        role: payload.role,
-        name: payload.name,
-        phone: payload.phone,
+        role,
+        name,
+        phone,
         created_at: now,
       },
       { onConflict: "id" },

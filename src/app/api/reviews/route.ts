@@ -64,6 +64,20 @@ export async function POST(request: Request) {
       return NextResponse.json({ message: "You cannot review your own profile." }, { status: 403 });
     }
 
+    const { data: parentProfile, error: parentError } = await adminSupabase
+      .from("profiles")
+      .select("id,role")
+      .eq("id", payload.parentId)
+      .maybeSingle();
+
+    if (parentError) {
+      return NextResponse.json({ message: parentError.message }, { status: 500 });
+    }
+
+    if (!parentProfile || parentProfile.role !== "parent") {
+      return NextResponse.json({ message: "Only parents can submit reviews." }, { status: 403 });
+    }
+
     const { data: reviewerTeacher, error: reviewerTeacherError } = await adminSupabase
       .from("teacher_profiles")
       .select("id")
