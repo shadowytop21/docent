@@ -181,7 +181,8 @@ export default function TeacherProfilePage() {
   }
 
   const isParent = session?.role === "parent";
-  const isTeacherSession = session?.role === "teacher";
+  const isTeacherOwner = Boolean(session?.id && currentTeacher.user_id === session.id);
+  const isTeacherSession = session?.role === "teacher" || isTeacherOwner;
   const isSelfTeacher = Boolean(session?.id && currentTeacher.user_id === session.id);
   const existingReview = isParent
     ? teacherReviews.find((review) => review.parent_id === session?.id) ?? null
