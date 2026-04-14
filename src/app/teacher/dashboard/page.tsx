@@ -12,6 +12,14 @@ export default function TeacherDashboardPage() {
   const { pushToast } = useToast();
   const [mounted, setMounted] = useState(false);
   const [analyticsTick, setAnalyticsTick] = useState(0);
+  const snapshot = loadAppState();
+  const session = snapshot.session;
+  const teacher = session ? snapshot.teachers.find((item) => item.user_id === session.id || item.name === session.name) : null;
+  const teacherId = teacher?.id ?? "";
+  const analytics = useMemo(
+    () => (teacherId ? getTeacherAnalyticsSummary(teacherId) : { viewsLast7Days: 0, contactsLast7Days: 0, savedCount: 0, lastViewedAt: null, lastContactedAt: null, lastSavedAt: null }),
+    [teacherId, analyticsTick],
+  );
 
   useEffect(() => {
     const snapshot = loadAppState();
@@ -28,13 +36,29 @@ export default function TeacherDashboardPage() {
     setMounted(true);
   }, [router]);
 
+  useEffect(() => {
+    if (!teacherId) {
+      return;
+    }
+
+    const refreshAnalytics = () => setAnalyticsTick((value) => value + 1);
+
+    refreshAnalytics();
+    window.addEventListener("docent-teacher-analytics-change", refreshAnalytics);
+    window.addEventListener("storage", refreshAnalytics);
+
+    const intervalId = window.setInterval(refreshAnalytics, 15000);
+
+    return () => {
+      window.removeEventListener("docent-teacher-analytics-change", refreshAnalytics);
+      window.removeEventListener("storage", refreshAnalytics);
+      window.clearInterval(intervalId);
+    };
+  }, [teacherId]);
+
   if (!mounted) {
     return <div className="mx-auto max-w-2xl px-4 py-24 text-center text-[var(--muted)]">Loading dashboard...</div>;
   }
-
-  const snapshot = loadAppState();
-  const session = snapshot.session!;
-  const teacher = snapshot.teachers.find((item) => item.user_id === session.id || item.name === session.name);
 
   if (!teacher) {
     return (
@@ -51,25 +75,8 @@ export default function TeacherDashboardPage() {
     );
   }
 
-  const currentTeacher = teacher;
-
-  const analytics = useMemo(() => getTeacherAnalyticsSummary(currentTeacher.id), [currentTeacher.id, analyticsTick]);
-
-  useEffect(() => {
-    const refreshAnalytics = () => setAnalyticsTick((value) => value + 1);
-
-    refreshAnalytics();
-    window.addEventListener("docent-teacher-analytics-change", refreshAnalytics);
-    window.addEventListener("storage", refreshAnalytics);
-
-    const intervalId = window.setInterval(refreshAnalytics, 15000);
-
-    return () => {
-      window.removeEventListener("docent-teacher-analytics-change", refreshAnalytics);
-      window.removeEventListener("storage", refreshAnalytics);
-      window.clearInterval(intervalId);
-    };
-  }, [currentTeacher.id]);
+  const currentSession = session!;
+  const currentTeacher = teacher!;
 
   const profileCompletionItems = useMemo(() => {
     const items = [
@@ -111,11 +118,11 @@ export default function TeacherDashboardPage() {
             <div className="dash-sidebar-kicker">
               Logged in as
             </div>
-            <div className="dash-sidebar-name">{session.name}</div>
+            <div className="dash-sidebar-name">{currentSession.name}</div>
             <div className="dash-sidebar-role">Teacher</div>
           </div>
           <Link href="/teacher/dashboard" className="dash-nav-item active" aria-current="page"><span className="dash-nav-icon">DB</span> Dashboard</Link>
-          <Link href={`/teacher/${teacher.id}`} className="dash-nav-item"><span className="dash-nav-icon">PR</span> My Profile</Link>
+          <Link href={`/teacher/${currentTeacher.id}`} className="dash-nav-item"><span className="dash-nav-icon">PR</span> My Profile</Link>
           <Link href="#analytics" className="dash-nav-item"><span className="dash-nav-icon">AN</span> Analytics</Link>
           <Link href="#reviews" className="dash-nav-item"><span className="dash-nav-icon">RV</span> Reviews</Link>
           <div className="dash-nav-divider" />
@@ -126,11 +133,11 @@ export default function TeacherDashboardPage() {
         <div className="dash-main">
           <div className="dash-header">
             <div>
-              <h1 className="dash-title">Welcome back, {session.name}</h1>
-              <p className="dash-sub">Your profile is {teacher.status} · Last updated recently</p>
+              <h1 className="dash-title">Welcome back, {currentSession.name}</h1>
+              <p className="dash-sub">Your profile is {currentTeacher.status} · Last updated recently</p>
             </div>
             <div className="dash-actions" aria-label="Quick actions">
-              <Link href={`/teacher/${teacher.id}`} className="dash-action-btn">View Profile</Link>
+              <Link href={`/teacher/${currentTeacher.id}`} className="dash-action-btn">View Profile</Link>
               <Link href="/teacher/setup?edit=1" className="dash-action-btn">Edit Profile</Link>
               <button type="button" onClick={copyProfileLink} className="dash-action-btn">Share Link</button>
             </div>
@@ -139,22 +146,22 @@ export default function TeacherDashboardPage() {
           <div className="dash-stats">
             <div className="dash-stat-card">
               <div className="dash-stat-icon">VW</div>
-              <div className="dash-stat-num">{Math.max(teacher.reviews_count * 5, 24)}</div>
+              <div className="dash-stat-num">{analytics.viewsLast7Days}</div>
               <div className="dash-stat-label">Profile views this week</div>
             </div>
             <div className="dash-stat-card">
               <div className="dash-stat-icon">CT</div>
-              <div className="dash-stat-num">{teacher.reviews_count + 12}</div>
+              <div className="dash-stat-num">{analytics.contactsLast7Days}</div>
               <div className="dash-stat-label">WhatsApp contacts</div>
             </div>
             <div className="dash-stat-card">
               <div className="dash-stat-icon">RT</div>
-              <div className="dash-stat-num">{teacher.rating.toFixed(1)}</div>
+              <div className="dash-stat-num">{currentTeacher.rating.toFixed(1)}</div>
               <div className="dash-stat-label">Average rating</div>
             </div>
             <div className="dash-stat-card">
               <div className="dash-stat-icon">SV</div>
-              <div className="dash-stat-num">{teacher.reviews_count + 8}</div>
+              <div className="dash-stat-num">{analytics.savedCount}</div>
               <div className="dash-stat-label">Parents saved you</div>
             </div>
           </div>
@@ -196,7 +203,7 @@ export default function TeacherDashboardPage() {
                 <div className="dash-card-title">Analytics</div>
                 <h2 id="analytics-title" className="dash-section-title">Track profile activity</h2>
               </div>
-              <Link href={`/teacher/${teacher.id}`} className="dash-mini-link">Open public profile</Link>
+              <Link href={`/teacher/${currentTeacher.id}`} className="dash-mini-link">Open public profile</Link>
             </div>
             <div className="analytics-grid">
               <div className="analytics-card">
@@ -220,10 +227,10 @@ export default function TeacherDashboardPage() {
                 <div className="dash-card-title">Reviews</div>
                 <h2 id="reviews-title" className="dash-section-title">Recent feedback</h2>
               </div>
-              <Link href={`/teacher/${teacher.id}`} className="dash-mini-link">See all reviews</Link>
+              <Link href={`/teacher/${currentTeacher.id}`} className="dash-mini-link">See all reviews</Link>
             </div>
             <div className="dash-review-note">
-              Your current public rating is <strong>{teacher.rating.toFixed(1)}</strong> from <strong>{teacher.reviews_count}</strong> review{teacher.reviews_count === 1 ? "" : "s"}.
+              Your current public rating is <strong>{currentTeacher.rating.toFixed(1)}</strong> from <strong>{currentTeacher.reviews_count}</strong> review{currentTeacher.reviews_count === 1 ? "" : "s"}.
               <span className="block pt-2 text-[12px] text-[var(--muted)]">Analytics refresh in real time as parents view, contact, and save your profile.</span>
             </div>
           </section>
